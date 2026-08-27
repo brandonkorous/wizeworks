@@ -1,0 +1,26 @@
+# The repo root holds the brand specs and ~30 MB of concept mockups. None of it
+# is read at build time — the site keeps its own copies of anything it renders
+# under site/public — so none of it belongs in the build context.
+docs/
+images/
+*.md
+!site/**/*.md
+
+# Build artefacts and local state
+**/node_modules
+**/.next
+**/out
+**/.turbo
+**/*.tsbuildinfo
+
+# Local env and tooling
+**/.env
+**/.env.*
+!**/.env.example
+.git
+.github
+.vscode
+.idea
+
+# The k8s manifests are applied by the workflow, not baked into the image
+k8s/

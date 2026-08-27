@@ -1,0 +1,23 @@
+# Port 80 → container 3000.
+#
+# The port matters: Caddy's routing table addresses every co-tenant site as
+# `<svc>.<ns>.svc.cluster.local:80` (see silicaui, kanninja, agconn). Exposing
+# 3000 here instead would need a matching edit in ANOTHER repository's ingress,
+# which is exactly the cross-repo coupling worth avoiding.
+apiVersion: v1
+kind: Service
+metadata:
+  name: site
+  namespace: wizeworks
+  labels:
+    app.kubernetes.io/name: site
+    app.kubernetes.io/part-of: wizeworks
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: site
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

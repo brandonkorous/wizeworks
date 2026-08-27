@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: wizeworks
+
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+
+# The workflow rewrites this to the commit SHA before applying, so a rollout is
+# always to an immutable tag even though the manifest reads `latest`.
+images:
+  - name: ghcr.io/brandonkorous/wizeworks-site
+    newTag: latest
