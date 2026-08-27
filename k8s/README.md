@@ -45,23 +45,49 @@ exactly that reason.
 
 ---
 
-## Prerequisites — none of these are code
+## Prerequisites — almost all of it is code
 
-- [ ] **Azure federated credential.** The workflow authenticates with no stored
-      secret, so the app registration needs a credential whose subject is
-      `repo:brandonkorous/wizeworks:ref:refs/heads/main`. Without it
-      `azure/login` fails with AADSTS70021.
-- [ ] **Repository variables** (variables, not secrets — they are public
-      identifiers and hiding them only makes a failed run harder to read):
-      `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`.
-- [ ] **Azure RBAC** for that identity: pull AKS credentials and write into the
-      `wizeworks` namespace.
-- [ ] **Make the GHCR package public** after the first push. Nothing here
-      carries an `imagePullSecret` because the kubelet pulls anonymously — a
-      private package fails as `ImagePullBackOff` with a 401 that reads like a
-      missing tag.
-- [ ] **DNS.** `wize.works` and `www.wize.works` at the cluster ingress IP —
-      the same address `admin.wize.works` already points at.
+**Almost all of this is Terraform, in the sparx repo.** It is provisioned the
+same way jotacular, kanNINJA and AGCONN are — no secrets are stored in GitHub
+at any point.
+
+| What | Where | State |
+|---|---|---|
+| App registration, service principal, federated credentials | `terraform/bootstrap-azure/wizeworks.tf` | written |
+| AKS `Cluster User` role assignment | same file | written |
+| `wize.works` + `www` DNS records | `terraform/modules/dns/main.tf` | written, gated |
+| DNS cutover switch | `terraform/envs/azure/ingress.tf` | `wizeworks_dns_enabled = false` |
+| Caddy route | `k8s/ingress/Caddyfile` | written |
+| On-demand TLS allow-list | `.../internal/domain-check.ts` | written |
+
+Apply `bootstrap-azure` first (it grants roles, which the release identity
+cannot do), then `envs/azure`.
+
+### The only two manual steps
+
+- [ ] **Set three repository variables.** `terraform output wizeworks_github_setup`
+      prints the exact `gh variable set` commands. These are VARIABLES, not
+      secrets — a client id identifies an application and authenticates nothing
+      without a matching federated subject.
+- [ ] **Make the GHCR package public**, once, after the first image is pushed.
+      The workflow checks this for you: a `verify-pullable` job does an
+      anonymous manifest fetch — the same path the kubelet takes — and fails
+      with the one-line fix rather than letting the rollout discover it as an
+      `ImagePullBackOff` 401 that reads like a missing tag.
+
+### The federated subject has numeric ids
+
+`repo:brandonkorous@13042540/wizeworks@1349021052`
+
+GitHub qualifies the OIDC subject per repository, by age. AgConnect and kanninja
+are old enough to keep the plain `repo:owner/name` form; jotacular and this repo
+get the qualified one. Copying a sibling's blindly produces a credential that
+never matches, and Entra reports only the subject it received. The Terraform
+default was read back with:
+
+```bash
+gh api repos/brandonkorous/wizeworks/actions/oidc/customization/sub --jq .sub_claim_prefix
+```
 
 ### A note on TLS for this zone
 

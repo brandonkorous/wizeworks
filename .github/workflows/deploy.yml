@@ -11,11 +11,22 @@ name: Build & Deploy to AKS
 #
 # AUTH: workload identity federation, no stored credential. Azure trusts a
 # GitHub OIDC token whose subject is
-#   repo:brandonkorous/wizeworks:ref:refs/heads/main
-# That federated credential must exist on the app registration before the first
-# deploy — see the checklist in k8s/README.md. The three AZURE_* values are
-# repository VARIABLES rather than secrets: they are public identifiers, and
-# hiding them only makes a failed run harder to read. This mirrors kanNINJA.
+#
+#   repo:brandonkorous@13042540/wizeworks@1349021052:ref:refs/heads/main
+#
+# NOTE THE NUMERIC IDS. GitHub qualifies the OIDC subject per repository, by
+# age — AgConnect and kanninja are old enough to keep the plain
+# `repo:owner/name` form, while jotacular and this repo get the qualified one.
+# The credential must match byte for byte; on a mismatch Entra reports only the
+# subject it RECEIVED, never the one it expected. Read it back rather than
+# assembling it:
+#
+#   gh api repos/brandonkorous/wizeworks/actions/oidc/customization/sub #     --jq .sub_claim_prefix
+#
+# The credential is provisioned by Terraform, not by hand — see
+# terraform/bootstrap-azure/wizeworks.tf in the sparx repo. The three AZURE_*
+# values are repository VARIABLES rather than secrets: they are public
+# identifiers, and hiding them only makes a failed run harder to read.
 
 on:
   push:
@@ -109,9 +120,51 @@ jobs:
           cache-from: type=gha,scope=site
           cache-to: type=gha,mode=min,scope=site,ignore-error=true
 
+  # ------------------------------------------------------------------
+  # Prove the kubelet will be able to pull, BEFORE asking it to.
+  #
+  # Nothing in k8s/ carries an imagePullSecret — the cluster pulls anonymously,
+  # matching kanninja and jotDOJO. If the GHCR package is private, that fails as
+  # ImagePullBackOff with a 401 that reads like a missing tag, discovered as a
+  # rollout that never becomes ready.
+  #
+  # This checks the SAME path the kubelet takes: an unauthenticated token
+  # request followed by an anonymous manifest HEAD. It is a five-second check
+  # that converts a confusing runtime failure into a named one with the fix
+  # attached.
+  # ------------------------------------------------------------------
+  verify-pullable:
+    name: Verify the image pulls anonymously
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Anonymous pull check
+        run: |
+          set -euo pipefail
+          PKG="wizeworks-site"
+          TAG="sha-$(echo '${{ github.sha }}' | cut -c1-7)"
+
+          TOKEN=$(curl -fsS "https://ghcr.io/token?scope=repository:brandonkorous/${PKG}:pull&service=ghcr.io" | jq -r .token)
+
+          CODE=$(curl -s -o /dev/null -w '%{http_code}'             -H "Authorization: Bearer ${TOKEN}"             -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json'             "https://ghcr.io/v2/brandonkorous/${PKG}/manifests/${TAG}")
+
+          if [ "$CODE" = "200" ]; then
+            echo "OK — ghcr.io/brandonkorous/${PKG}:${TAG} is anonymously pullable."
+            exit 0
+          fi
+
+          echo "::error::The image is NOT anonymously pullable (HTTP ${CODE}). The"
+          echo "::error::cluster pulls without credentials, so the rollout would fail as"
+          echo "::error::ImagePullBackOff with a 401 that looks like a missing tag."
+          echo "::error::"
+          echo "::error::Fix once, then re-run this workflow:"
+          echo "::error::  gh api -X PATCH /user/packages/container/${PKG} -f visibility=public"
+          echo "::error::or Packages -> ${PKG} -> Package settings -> Change visibility."
+          exit 1
+
   deploy:
     name: Roll out to AKS
-    needs: build
+    needs: [build, verify-pullable]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
