@@ -1,0 +1,153 @@
+@import "tailwindcss";
+@import "./theme.css";
+
+@source "../app";
+@source "../components";
+@source "../lib";
+
+/* ----------------------------------------------------------------------------
+   Type stack.
+
+   This deliberately lives OUTSIDE the `@plugin ".../theme"` blocks in theme.css.
+   The theme plugin does not preserve a `var()` reference in a token value — it
+   parses the value and keeps only the last comma-separated part, so
+   `--font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif`
+   silently compiles down to `--font-sans: sans-serif` and Inter never applies.
+
+   Declared here as a plain unlayered rule instead: it beats Tailwind's layered
+   `@theme` default, no theme block redeclares it, and custom properties inherit
+   so every `data-theme` island picks it up. `--font-inter` comes from next/font
+   via the class on <html> in app/layout.tsx.
+   ---------------------------------------------------------------------------- */
+:root {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ----------------------------------------------------------------------------
+   Brand motion tokens — docs/animation.md §3.
+   Silica's `--ease` covers component state transitions; these are for the
+   custom scroll primitives built in Phase 1.
+   ---------------------------------------------------------------------------- */
+@theme {
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* The themed surface paints itself via [data-theme]; this just makes sure the
+   page fills the viewport so the ground is unbroken. */
+html,
+body {
+  min-height: 100%;
+}
+
+/* ----------------------------------------------------------------------------
+   Keyboard focus — docs/design.md §24 requires a visible focus state.
+
+   Silica already rings its own components (`.btn:focus-visible`,
+   `.input:focus-visible`, and 60-odd more). It does NOT ring a plain anchor,
+   and most links on this site are plain anchors with utility classes — the
+   navigation, the footer, every product card. Those were falling through to
+   whatever the browser happened to draw.
+
+   Declared with `:where()` so it carries ZERO specificity: Silica's component
+   rings still win wherever they apply, and this only fills the gap. It reads
+   Silica's own focus tokens so the ring is the same thickness and offset
+   everywhere, and `currentColor` keeps it legible inside a dark island without
+   a second rule.
+
+   `:focus-visible`, not `:focus` — a mouse click on a card should not leave a
+   ring behind it.
+   ---------------------------------------------------------------------------- */
+:where(a, button, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: var(--focus-width, 2px) solid currentColor;
+  outline-offset: var(--focus-offset, 2px);
+  border-radius: 2px;
+}
+
+/* ----------------------------------------------------------------------------
+   Maker's-mark assembly — docs/animation.md §7.
+
+   The signature motion of the site. Three precision-cut objects being placed
+   onto a surface: each piece begins slightly offset and settles into its exact
+   canonical location. The geometry never changes — only position is animated.
+   No rotation, no morphing, no scaling, no bounce (§7 forbids all four).
+
+   Offsets are in viewBox units; the mark's viewBox is 200 wide, so at a 400px
+   hero render one unit is 2px and a 12-unit offset reads as ~24px, inside the
+   18–28px the spec asks for. All three start within ~120ms and settle together.
+   ---------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  .mark-piece {
+    animation: mark-settle 950ms var(--ease-enter) both;
+  }
+
+  /* top */
+  .mark-piece-0 {
+    --mark-from-x: 0;
+    --mark-from-y: -12;
+    animation-delay: 0ms;
+  }
+
+  /* lower-right — the warm taupe unit */
+  .mark-piece-120 {
+    --mark-from-x: 10;
+    --mark-from-y: 8;
+    animation-delay: 120ms;
+  }
+
+  /* lower-left */
+  .mark-piece-240 {
+    --mark-from-x: -10;
+    --mark-from-y: 8;
+    animation-delay: 60ms;
+  }
+
+  @keyframes mark-settle {
+    from {
+      opacity: 0;
+      translate: calc(var(--mark-from-x) * 1px) calc(var(--mark-from-y) * 1px);
+    }
+    to {
+      opacity: 1;
+      translate: 0 0;
+    }
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   Hero entrance — docs/animation.md §6.
+   Whole lines, never individual letters, and never a typing effect. The
+   headline lines lead; the supporting copy and CTAs follow once the headline
+   and the mark have begun settling (§9: ~350–450ms behind).
+   ---------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  .hero-line {
+    animation: hero-rise 700ms var(--ease-enter) both;
+  }
+  .hero-line-1 { animation-delay: 100ms; }  /* headline line 1 */
+  .hero-line-2 { animation-delay: 180ms; }  /* §6.1: +80ms */
+  .hero-line-3 { animation-delay: 260ms; }  /* §6.1: +160ms */
+  .hero-line-4 { animation-delay: 440ms; }  /* supporting copy */
+  .hero-line-5 { animation-delay: 520ms; }  /* CTAs, §9 */
+
+  @keyframes hero-rise {
+    from { opacity: 0; transform: translateY(22px); }
+    to   { opacity: 1; transform: none; }
+  }
+}
+
+/* Reduced motion: the mark and the headline are simply present.
+   §33 — disable the assembly movement, show the final state immediately. */
+@media (prefers-reduced-motion: reduce) {
+  .mark-piece {
+    animation: none;
+    opacity: 1;
+    translate: none;
+  }
+  .hero-line {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

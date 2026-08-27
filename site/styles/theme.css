@@ -1,0 +1,116 @@
+/* ============================================================================
+   WizeWorks brand theme for Silica UI
+   ----------------------------------------------------------------------------
+   Palette values are canonical. Do not edit here without editing the spec:
+     docs/design.md §5  — primary pairing (charcoal + warm taupe)
+     docs/design.md §6  — supporting neutral palette
+     docs/design.md §21 — dark surfaces
+     docs/animation.md §3 — easing
+
+   This file is imported AFTER `@import "tailwindcss"` so its values win by
+   source order. Components must never hardcode hex — read tokens instead.
+   ============================================================================ */
+
+/* ----------------------------------------------------------------------------
+   Registered color roles.
+   The `colors:` list REPLACES the default set, so the built-ins are re-listed.
+   The five product roles exist so each product can bring its own color into its
+   own card (docs/design.md §7) without WizeWorks itself becoming colorful.
+   ---------------------------------------------------------------------------- */
+@plugin "@wizeworks/silicaui" {
+  colors: primary, secondary, accent, neutral, info, success, warning, error,
+          kanninja, agconn, sparx, piggles, jotacular, silicaui;
+}
+
+/* ----------------------------------------------------------------------------
+   Product brand colours.
+
+   Three were SAMPLED FROM THE LIVE PRODUCTS — read off the primary call to
+   action on each product's own site, not invented here or eyeballed from a
+   screenshot.
+
+   All five are now sampled from the live products. None was invented here or
+   eyeballed from a screenshot.
+   ---------------------------------------------------------------------------- */
+@theme {
+  --color-kanninja:  #E0432F;  /* sampled: kanninja.com "Start a kata" */
+  --color-piggles:   #FF7C91;  /* sampled: getpiggles.com "Sign in to Piggles" */
+  --color-jotacular: #00C2A8;  /* sampled: jotacular.com "Start jotting" */
+
+  /* NOTE: sparx #E04631 and kanNINJA #E0432F are effectively the same red —
+     see docs/plan.md §10.2. Flagged for the brand owner, not resolved here. */
+  --color-agconn:    #5B6E2E;  /* sampled: agconn.com "Find work today" */
+  --color-silicaui:  #00A0B9;  /* sampled: silicaui.com --color-accent, oklch(64% .13 211) */
+  --color-sparx:     #E04631;  /* sampled: sparx.works "Start your story" */
+}
+
+/* ----------------------------------------------------------------------------
+   wizeworks — the default light theme. Paper ground, charcoal ink.
+   ---------------------------------------------------------------------------- */
+@plugin "@wizeworks/silicaui/theme" {
+  name: wizeworks;
+  color-scheme: light;
+  default: true;
+
+  /* Surfaces — docs/design.md §6 */
+  --color-base-100: #F7F3EA;        /* Paper */
+  --color-base-200: #F2EEE7;        /* Soft Neutral */
+  --color-base-300: #DDD8D0;        /* Light Warm Gray */
+  --color-base-content: #1F1F1F;    /* Deep Charcoal */
+
+  /* Roles — docs/design.md §5 */
+  --color-primary: #1F1F1F;         /* Deep Charcoal */
+  --color-primary-content: #F7F3EA;
+  --color-secondary: #62605C;       /* Graphite */
+  --color-secondary-content: #F7F3EA;
+  --color-accent: #A69D90;          /* Warm Taupe */
+  --color-accent-content: #1F1F1F;
+  --color-neutral: #8E8981;         /* Muted Warm Gray */
+  --color-neutral-content: #1F1F1F;
+
+  /* Shape — docs/design.md §15: modest radius, minimal shadow or none */
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+  --radius-selector: 1rem;
+  --border: 1px;
+  --depth: 0;
+
+  /* Motion — docs/animation.md §2 micro range, §3 standard easing */
+  --duration: 160ms;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ----------------------------------------------------------------------------
+   wizeworks-dark — a SECTION ISLAND, not a user preference.
+   The philosophy band and the final CTA are dark inside a light page:
+     <section data-theme="wizeworks-dark"> … </section>
+   Values from docs/design.md §21. A site-wide dark mode is out of scope for v1
+   (docs/plan.md §11), but this theme is what that would switch to.
+   ---------------------------------------------------------------------------- */
+@plugin "@wizeworks/silicaui/theme" {
+  name: wizeworks-dark;
+  color-scheme: dark;
+
+  --color-base-100: #151515;        /* Near Black */
+  --color-base-200: #1F1F1F;        /* Cards */
+  --color-base-300: #333230;        /* Dividers */
+  --color-base-content: #F7F3EA;    /* Warm off-white */
+
+  --color-primary: #F7F3EA;
+  --color-primary-content: #151515;
+  --color-secondary: #B9B4AC;
+  --color-secondary-content: #151515;
+  --color-accent: #A69D90;
+  --color-accent-content: #151515;
+  --color-neutral: #8E8981;
+  --color-neutral-content: #151515;
+
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+  --radius-selector: 1rem;
+  --border: 1px;
+  --depth: 0;
+
+  --duration: 160ms;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
