@@ -154,7 +154,7 @@ Register the five product colors as custom Silica roles (the `colors:` list in �
 
 Containment is a lint rule, not a hope: **a `*-<product>` class may only appear inside that product's card subtree.** Nothing outside a product card may reference a product color, and the maker's mark never does.
 
-`site/lib/products.ts` carries the five as typed data — slug, name, positioning line, category, outcome sentence, brand color, logo path, screenshot path — so the portfolio, proof strip and footer all render from one list.
+`site/lib/products.ts` carries the six as typed data — slug, name, positioning line, category, outcome sentence, brand color, screenshot path — so the portfolio, the products index, the detail pages and the footer all render from one list. Counts on the page derive from `PRODUCTS.length`, so they cannot drift.
 
 > Product brand hexes are **not yet in the specs.** See §10.
 
@@ -844,3 +844,57 @@ order.
 - WebGL or 3D hero (`landing.md` §22: don't ship a heavy scene if a rendered asset works)
 - Internationalization
 - Anything in `animation.md` Tier 3
+
+---
+
+# Statement band replaces the proof strip
+
+**2026-08-28.** The homepage's second section was a "Made by WizeWorks" proof
+strip: the six products as text name cards. It has been replaced by a full-bleed
+statement band (`landing.md` §5, `animation.md` §10).
+
+**Why.** `landing.md` §5 asked for *recognizable brand marks*. There are no
+per-product logo assets, so the strip degraded into six plain names — directly
+above the portfolio, which renders the same six with real interface captures,
+categories and product colour. It was a strictly weaker duplicate of the section
+immediately beneath it.
+
+**What it says.**
+
+> We don't demo software. We run it.
+>
+> Every product on this page is something we built, shipped, and still run.
+> Not a case study. Not a pitch.
+
+Deliberately modest: it claims existence, shipping and continued operation, and
+nothing about adoption or outcome. AGCONN is early, and §9/§25 forbid inventing
+that. It also explains the absence of Selected Work and testimonials.
+
+**The photograph.** Alfred T. Palmer, 1942, U.S. Office of War Information, via
+the Library of Congress — public domain. Chosen from four PD/CC0 candidates
+because its palette already is the brand's, and it shows real work rather than
+the stock genre `design.md` §22 bans. CC BY-SA candidates were excluded on
+purpose: cropping and darkening produces an adapted work that would carry
+share-alike obligations onto the page. Inspected at full resolution before use —
+metadata lies, and a "CC0" candidate arrived watermarked once already.
+
+**The scrim was solved, not eyeballed.** Contrast measured against the p99.9
+brightest pixels each text run actually covers, composited through the gradient
+at that x:
+
+| Run | Ratio | Needs |
+|---|---|---|
+| Heading | `8.26:1` | 4.5 |
+| "We run it." (taupe) | `4.89:1` | 3.0 |
+| Supporting line | `6.89:1` | 4.5 |
+| Credit, 14px | `4.97:1` | 4.5 |
+
+Two findings worth keeping:
+
+- A first pass at `1/0.9/0.6` measured `11.2:1` and buried the photograph
+  entirely. Legibility had ~2.5× more headroom than the design needed, and
+  spending it made the image pointless. Taupe on the second line is the binding
+  constraint — the dimmest element sets the floor for the whole band.
+- The credit line was first written at `/50` opacity and measured **3.09:1** —
+  a plain AA failure. **Dimming text is the same mistake as shrinking it**, and
+  it evades the type-scale rules because the font size is legal. Now `/75`.

@@ -325,23 +325,39 @@ Secondary CTA:
 
 ---
 
-# 10. "Made by WizeWorks" Immediate Proof
+# 10. Statement Band
 
-If the portfolio brand strip is directly under the hero, it should feel like the hero's proof.
+The full-bleed statement directly under the hero (`landing.md` §5). It replaced
+the "Made by WizeWorks" product-brand strip, whose stagger this section used to
+specify — there are no product marks here any more to stagger.
 
 ## Reveal
 
-Label appears first.
-
-Product marks then enter in a short sequence:
+One reveal concept for the whole band. The statement and its supporting line
+enter together as a single block:
 
 - opacity `0 → 1`
-- translateY `8px → 0`
-- stagger `55ms`
+- translateY `24px → 0`
+- duration `550–700ms`
+- no per-word or per-line stagger
 
-Do not grayscale logos and recolor them on hover unless the original brand system calls for it.
+## The photograph does not animate
 
-The product identities should feel alive immediately.
+No fade-in, no parallax, no Ken Burns drift.
+
+It is a full-bleed background behind text that must stay readable from the first
+frame. A moving or fading ground under fixed type is the one combination that
+makes a legible contrast ratio untrue *while it is in motion*, and it is
+precisely the effect a person with vestibular sensitivity cannot opt out of once
+it has already played.
+
+The image therefore paints immediately, with a blurred placeholder standing in
+until it decodes. What moves is the text, once.
+
+## Reduced motion
+
+Under `prefers-reduced-motion: reduce` the block is present at rest — full
+opacity, no translate. Tier 1, per §33 and §37.
 
 ---
 
@@ -980,7 +996,7 @@ Ship Tier 1 first.
 | Hero headline | Staggered line reveal | Medium |
 | Hero maker's mark | Precision assembly | High / Signature |
 | Hero background | Static / gentle reveal | Very low |
-| Made by WizeWorks | Product-brand stagger | Low |
+| Statement band | Single block reveal; image static | Low |
 | Product portfolio | Card reveal + product color | Medium |
 | Philosophy band | Text reveal | Low |
 | Process | Scroll progress construction line | High / Signature |

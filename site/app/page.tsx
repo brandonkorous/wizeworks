@@ -1,6 +1,6 @@
 import { SiteNav } from "@/components/sections/site-nav";
 import { Hero } from "@/components/sections/hero";
-import { ProofStrip } from "@/components/sections/proof-strip";
+import { InProduction } from "@/components/sections/in-production";
 import { Portfolio } from "@/components/sections/portfolio";
 import { Philosophy } from "@/components/sections/philosophy";
 import { Process } from "@/components/sections/process";
@@ -26,9 +26,14 @@ import { ScrollDepth } from "@/components/analytics/scroll-depth";
  * no section: it is the exact "fake stats / fake testimonials" the spec rules
  * out, and it would undermine the credibility the rest of the page is building.
  *
- * The page progressively proves the hero's claim: the portfolio shows WizeWorks
- * makes things, the philosophy says what connects them, the process shows the
- * work is intentional, and the CTA becomes a natural conclusion.
+ * The page progressively proves the hero's claim: the statement band says what
+ * kind of company this is, the portfolio shows WizeWorks makes things, the
+ * philosophy says what connects them, the process shows the work is
+ * intentional, and the CTA becomes a natural conclusion.
+ *
+ * The old "Made by WizeWorks" proof strip is gone. It listed the same six
+ * products, as plain text names, immediately above the portfolio that renders
+ * them properly — see in-production.tsx for the full reasoning.
  */
 export default function Home() {
   return (
@@ -45,7 +50,7 @@ export default function Home() {
 
       <main id="main">
         <Hero />
-        <ProofStrip />
+        <InProduction />
         <Portfolio />
         <Philosophy />
         <Process />

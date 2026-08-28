@@ -176,58 +176,77 @@ The primary CTA directs visitors to the most important proof WizeWorks has: **th
 
 ---
 
-# 5. Section 02 — Immediate Proof Strip
+# 5. Section 02 — Statement Band
 
 ## Purpose
 
 The hero makes a promise.
 
-The next block should immediately provide evidence that WizeWorks actually makes things.
+This band says **what kind of company made the things below**, and hands the
+page to the portfolio to prove it.
 
-Do **not** jump directly into generic company philosophy.
+Do **not** jump directly into generic company philosophy. That ordering
+constraint has not changed.
 
-Recommended framing:
+## What this replaced, and why
 
-> **Made by WizeWorks**
+This slot was previously a proof strip headed **Made by WizeWorks**, listing the
+six products as brand marks.
 
-Then display the current portfolio as recognizable brand marks:
+It was cut because it did not work in practice. The spec asked for *recognizable
+brand marks*, and there are no per-product logo assets — so it rendered as six
+plain text names, directly above the portfolio (§6) that renders the same six
+with real interface captures, categories and product colour.
 
-- Piggles
-- sparx
-- AGCONN
-- kanNINJA
-- jotacular
-- SilicaUI
+A weaker duplicate three inches above the stronger original is worse than
+nothing there at all. The slot now does the one job the portfolio cannot do for
+itself: characterise the company, rather than re-list its output.
 
-Optional supporting line:
+The attribution phrase **Made by WizeWorks** is unaffected and remains canonical
+(`design.md` §5). It was a section heading here; it is not one any more.
 
-> Six distinct products. One shared standard: they work.
+## Content
 
-(The site derives this count from the product data, so it cannot drift again.)
+Statement:
 
-## Behavior
+> **We don't demo software. We run it.**
 
-Desktop:
+Supporting line:
 
-- horizontal brand rail
-- restrained color
-- generous spacing
+> Every product on this page is something we built, shipped, and still run.
+> Not a case study. Not a pitch.
 
-Mobile:
+## The claim is deliberately modest
 
-- two-column or horizontally scrollable rail
+It says the products exist, shipped, and are still operated. It does **not**
+claim adoption, dependence, headcount or outcome.
 
-Each brand should be clickable.
+That restraint is load-bearing. AGCONN is early, and §9 and §25 forbid inventing
+exactly that class of number. Every word of this statement is checkable.
 
-## Important
+It also does honest double duty: it explains, without apologising, why this site
+carries no Selected Work and no testimonials.
 
-The WizeWorks maker's mark remains neutral.
+## Treatment
 
-Each product keeps its own color.
+- Full-bleed photograph, edge to edge, behind the statement
+- Dark **theme island** — `data-theme="wizeworks-dark"`, never a `dark:` variant
+- Statement left-aligned in the content column, vertically centred
+- Photograph credited in a line at the 14px step
 
-This is the first visual demonstration of the brand-architecture principle:
+**Do** use a real photograph of real work.
 
-> **WizeWorks provides the canvas. Products provide the expression.**
+**Avoid** posed lifestyle photography, screens-in-an-office, and anything from
+the "generic boardroom stock" genre §12 and `design.md` §22 rule out. Open-source
+and public-domain sources are encouraged — the ban is on a genre, not a
+sourcing method.
+
+**Do not** let the image win against the words. The scrim is solved against the
+brightest pixels each text run actually covers, not chosen by eye. The dimmest
+element on the band — taupe, on the second line — sets the floor for all of it.
+
+**Do not** put product colour here. WizeWorks stays neutral; the portfolio in §6
+is where colour enters.
 
 ---
 
