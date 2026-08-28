@@ -1,0 +1,11 @@
+# Adobe Illustrator scratch files. These are written beside the document while
+# it is open and can be enormous — a 97.8 MB one reached the first commit and is
+# still in this repo's history, which is most of its size on disk.
+~ai-*.tmp
+*.ai.tmp
+
+# OS cruft
+Thumbs.db
+.DS_Store
+
+# Build output and dependencies are ignored per-project; see site/.gitignore.
