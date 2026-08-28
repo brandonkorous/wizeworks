@@ -72,8 +72,18 @@ cannot do), then `envs/azure`.
 - [ ] **Make the GHCR package public**, once, after the first image is pushed.
       The workflow checks this for you: a `verify-pullable` job does an
       anonymous manifest fetch — the same path the kubelet takes — and fails
-      with the one-line fix rather than letting the rollout discover it as an
-      `ImagePullBackOff` 401 that reads like a missing tag.
+      with the fix attached rather than letting the rollout discover it as an
+      `ImagePullBackOff`.
+
+      **A 404 from that job is not automatically a visibility problem.** GHCR
+      answers unauthorised anonymous fetches with 404 rather than 401, so the
+      same status covers a private package, a missing tag, AND an `Accept`
+      header that does not name the manifest's media type. The image here is
+      single-platform, so its manifest is a plain
+      `application/vnd.oci.image.manifest.v1+json` — asking for only the
+      multi-arch index types 404s a perfectly public, perfectly pullable image.
+      That cost a deploy cycle on 2026-08-28. The job now runs an anonymous tag
+      list to separate the three cases and names which one it hit.
 
 ### The federated subject has numeric ids
 

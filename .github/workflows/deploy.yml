@@ -125,8 +125,12 @@ jobs:
   #
   # Nothing in k8s/ carries an imagePullSecret — the cluster pulls anonymously,
   # matching kanninja and jotDOJO. If the GHCR package is private, that fails as
-  # ImagePullBackOff with a 401 that reads like a missing tag, discovered as a
-  # rollout that never becomes ready.
+  # ImagePullBackOff, discovered as a rollout that never becomes ready.
+  #
+  # GHCR answers an unauthorised anonymous manifest fetch with 404, NOT 401 — it
+  # hides existence rather than admitting it. So a 404 here means private, or a
+  # missing tag, or an Accept header that does not cover the manifest's media
+  # type. The step below tells those apart instead of guessing.
   #
   # This checks the SAME path the kubelet takes: an unauthenticated token
   # request followed by an anonymous manifest HEAD. It is a five-second check
@@ -146,20 +150,55 @@ jobs:
 
           TOKEN=$(curl -fsS "https://ghcr.io/token?scope=repository:brandonkorous/${PKG}:pull&service=ghcr.io" | jq -r .token)
 
-          CODE=$(curl -s -o /dev/null -w '%{http_code}'             -H "Authorization: Bearer ${TOKEN}"             -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json'             "https://ghcr.io/v2/brandonkorous/${PKG}/manifests/${TAG}")
+          # ALL FOUR media types, and the last two are the ones that matter.
+          # This build is SINGLE-PLATFORM (no `platforms:`, and `provenance:
+          # false` suppresses the attestation index), so its manifest is a plain
+          # `application/vnd.oci.image.manifest.v1+json` — NOT an index or a
+          # manifest list. A registry serves a manifest only if its type is in
+          # Accept, and GHCR reports the miss as 404, which is indistinguishable
+          # from a private package or a missing tag. Listing only the multi-arch
+          # types here failed a perfectly pullable image on 2026-08-28.
+          ACCEPT='application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json'
+
+          CODE=$(curl -s -o /dev/null -w '%{http_code}'             -H "Authorization: Bearer ${TOKEN}"             -H "Accept: ${ACCEPT}"             "https://ghcr.io/v2/brandonkorous/${PKG}/manifests/${TAG}")
 
           if [ "$CODE" = "200" ]; then
             echo "OK — ghcr.io/brandonkorous/${PKG}:${TAG} is anonymously pullable."
             exit 0
           fi
 
-          echo "::error::The image is NOT anonymously pullable (HTTP ${CODE}). The"
-          echo "::error::cluster pulls without credentials, so the rollout would fail as"
-          echo "::error::ImagePullBackOff with a 401 that looks like a missing tag."
+          # A bare 404 has three causes and they need different fixes, so
+          # discriminate before reporting. An anonymous TAGS LIST succeeds only
+          # on a public package, which separates "private" from the rest.
+          TAGS=$(curl -s -H "Authorization: Bearer ${TOKEN}"             "https://ghcr.io/v2/brandonkorous/${PKG}/tags/list")
+
+          echo "::error::The image is NOT anonymously pullable (HTTP ${CODE})."
+          echo "::error::The cluster pulls without credentials, so the rollout"
+          echo "::error::would fail as ImagePullBackOff."
           echo "::error::"
-          echo "::error::Fix once, then re-run this workflow:"
-          echo "::error::  gh api -X PATCH /user/packages/container/${PKG} -f visibility=public"
-          echo "::error::or Packages -> ${PKG} -> Package settings -> Change visibility."
+
+          if echo "$TAGS" | grep -q '"tags"'; then
+            echo "::error::The package IS public — anonymous tag listing worked:"
+            echo "::error::  ${TAGS}"
+            echo "::error::"
+            if echo "$TAGS" | grep -q "\"${TAG}\""; then
+              echo "::error::and the tag ${TAG} EXISTS. So this is a media-type"
+              echo "::error::mismatch, not a permissions problem: the manifest's"
+              echo "::error::type is not in this job's Accept header. Check what"
+              echo "::error::the registry actually holds --"
+              echo "::error::  curl -sD- -o/dev/null -H \"Authorization: Bearer \$TOKEN\" \\"
+              echo "::error::    -H \"Accept: \$ACCEPT\" \\"
+              echo "::error::    https://ghcr.io/v2/brandonkorous/${PKG}/manifests/${TAG}"
+            else
+              echo "::error::but the tag ${TAG} is MISSING. The build job pushed a"
+              echo "::error::different tag than this job asked for."
+            fi
+          else
+            echo "::error::Anonymous tag listing was refused, so the package is"
+            echo "::error::PRIVATE. Fix once, then re-run this workflow:"
+            echo "::error::  gh api -X PATCH /user/packages/container/${PKG} -f visibility=public"
+            echo "::error::or Packages -> ${PKG} -> Package settings -> Change visibility."
+          fi
           exit 1
 
   deploy:
