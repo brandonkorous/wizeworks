@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { WizeLens } from "@/components/wizelens";
 import "../styles/globals.css";
 
 /* Self-hosted by next/font — no external font request at runtime.
@@ -25,7 +26,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" data-theme="wizeworks" className={inter.variable}>
-      <body>{children}</body>
+      <body>
+        {children}
+        {/* Tracing (WizeLens): on only when this page's server traces it; no HUD outside development. */}
+        <WizeLens />
+      </body>
     </html>
   );
 }

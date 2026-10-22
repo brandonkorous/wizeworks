@@ -222,6 +222,33 @@ jobs:
             --name "$CLUSTER" \
             --overwrite-existing
 
+      # Key Vault -> Kubernetes Secret, the same flow as kanninja and rocketease,
+      # for the site's one secret: its WizeLens ingest key. OPTIONAL end to end.
+      # With no AZURE_KEY_VAULT_NAME variable, or no key in the vault, this step
+      # only says so; the Deployment reads the key with `optional: true`, so the
+      # site rolls out untraced rather than failing. Runs before the apply, so a
+      # new pod starts with the key already in place.
+      - name: WizeLens ingest key from Key Vault
+        env:
+          VAULT: ${{ vars.AZURE_KEY_VAULT_NAME }}
+        run: |
+          set -euo pipefail
+          if [ -z "$VAULT" ]; then
+            echo "::notice::AZURE_KEY_VAULT_NAME is not set: the site deploys untraced."
+            exit 0
+          fi
+          if ! key=$(az keyvault secret show --vault-name "$VAULT" \
+                       --name wizelens-key-wizeworks-site --query value -o tsv 2>/dev/null); then
+            echo "::notice::Could not read wizelens-key-wizeworks-site from $VAULT (missing, or no Key Vault Secrets User role): the site deploys untraced."
+            echo "Set it with: az keyvault secret set --vault-name $VAULT --name wizelens-key-wizeworks-site --value '<wl_ik_...>'"
+            exit 0
+          fi
+          echo "::add-mask::$key"
+          kubectl apply -f k8s/namespace.yaml
+          kubectl create secret generic site-secrets -n "$NAMESPACE" \
+            --from-literal=WIZELENS_KEY_WIZEWORKS_SITE="$key" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       # Pin to the immutable SHA tag rather than rolling `:latest`. A rollout to
       # a mutable tag is not reproducible and cannot be rolled back by revision.
       - name: Pin image and apply
