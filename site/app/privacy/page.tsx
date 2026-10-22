@@ -21,6 +21,8 @@ export const metadata: Metadata = {
  *   • no cookie is set by this site
  *   • fonts are self-hosted by next/font, so no request reaches Google
  *   • the contact form collects four fields and currently cannot deliver them
+ *   • performance traces (WizeLens, instrumentation.ts) cover a sample of
+ *     requests and go to WizeLens Cloud, our own tracing service
  *
  * What it is NOT: advice about which jurisdictions apply, whether GDPR/CCPA
  * obligations are triggered, or what a data-processing agreement needs to say.
@@ -33,7 +35,7 @@ export const metadata: Metadata = {
  */
 
 /** Update whenever the substance changes. Not auto-generated on purpose. */
-const LAST_UPDATED = "27 August 2026";
+const LAST_UPDATED = "21 October 2026";
 
 function Section({
   id,
@@ -79,7 +81,12 @@ export default function PrivacyPage() {
             We do not track you. This site sets no cookies, loads nothing from
             third-party servers, and has no analytics product installed. If you
             send us a message through the contact form, we receive what you
-            typed and nothing else.
+            typed and nothing else. To keep the site fast and working, we
+            record how a sample of page requests performed; see{" "}
+            <a href="#servers" className="underline underline-offset-4">
+              Server logs and performance
+            </a>
+            .
           </p>
         </Section>
 
@@ -125,13 +132,28 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section id="servers" heading="Server logs">
+        <Section id="servers" heading="Server logs and performance">
           <p>
             Like almost every website, the server that delivers these pages keeps
             ordinary request logs, which may include an IP address, a timestamp,
             and which page was requested. These are operational records used to
             keep the site running and to investigate abuse. They are not combined
             with anything else to build a profile of you.
+          </p>
+          <p>
+            For a sample of page requests, the server also records a
+            performance trace: the page requested, how long each step took,
+            any error, your IP address, and your browser&rsquo;s user-agent
+            string. Your browser reports the same page&rsquo;s load and render
+            times and any script errors back to this domain, with a random id
+            for the tab, kept in session storage and gone when the tab closes.
+            It is not a cookie.
+          </p>
+          <p>
+            These traces go to WizeLens, the tracing service WizeWorks runs. We
+            use them to find slow pages and errors, and for nothing else. They
+            are not used for advertising and are not combined with anything to
+            build a profile of you.
           </p>
         </Section>
 

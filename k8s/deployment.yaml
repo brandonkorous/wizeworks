@@ -43,6 +43,23 @@ spec:
               value: '3000'
             - name: HOSTNAME
               value: '0.0.0.0'
+            # Tracing (WizeLens), send-only: a quarter of requests go to
+            # WizeLens Cloud, project `wizeworks`. The ingest key is this app's
+            # own (vault `wizelens-key-wizeworks-site`, written into
+            # `site-secrets` by the deploy workflow). It is optional, so a
+            # missing key leaves the site running and untraced, never failing.
+            - name: WIZELENS_ENABLED
+              value: 'true'
+            - name: WIZELENS_HUB
+              value: https://app.wizelens.com
+            - name: WIZELENS_SAMPLE_RATE
+              value: '0.25'
+            - name: WIZELENS_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: site-secrets
+                  key: WIZELENS_KEY_WIZEWORKS_SITE
+                  optional: true
             # Contact-form delivery is intentionally unconfigured — the route
             # validates and returns 503 rather than pretending to send. Set
             # CONTACT_TO and CONTACT_EMAIL here (or from a Secret) to switch it

@@ -21,6 +21,13 @@ const nextConfig: NextConfig = {
    * `libc6-compat` alongside it; both are in the Dockerfile.
    */
 
+  /**
+   * WizeLens patches node:http and reads its own files, so it loads from
+   * node_modules rather than a bundle. The standalone trace still copies it
+   * into `.next/standalone/node_modules`, because instrumentation.ts imports it.
+   */
+  serverExternalPackages: ["@wizeworks/lens-node"],
+
   poweredByHeader: false,
 
   async headers() {

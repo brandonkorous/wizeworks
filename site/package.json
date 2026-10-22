@@ -9,6 +9,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@wizeworks/lens-node": "0.3.0-alpha.9",
+    "@wizeworks/lens-react": "0.3.0-alpha.9",
     "@wizeworks/silicaui-react": "^0.55.0",
     "next": "^16.3.3",
     "react": "^19.2.8",

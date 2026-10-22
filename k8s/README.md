@@ -148,6 +148,31 @@ reclaim the generations still in use.
 ~146 MB of concept mockups that the site never reads, which would otherwise be
 uploaded as build context on every run.
 
+## Tracing (WizeLens)
+
+The site sends traces to WizeLens Cloud (`app.wizelens.com`), project
+`wizeworks`, service `wizeworks-site`. Send-only: with `NODE_ENV=production` the
+add-on serves no dashboard, and it keeps a quarter of requests
+(`WIZELENS_SAMPLE_RATE=0.25`). Kubelet health probes are not traced.
+
+The ingest key is the site's one secret. The deploy workflow reads
+`wizelens-key-wizeworks-site` from the vault named by the `AZURE_KEY_VAULT_NAME`
+repository variable and writes it into the `site-secrets` Secret as
+`WIZELENS_KEY_WIZEWORKS_SITE`, which the Deployment maps to `WIZELENS_HUB_TOKEN`.
+Every part is optional: no variable, no key, or no read access, and the site
+rolls out untraced.
+
+```bash
+az keyvault secret set --vault-name <vault> --name wizelens-key-wizeworks-site --value <wl_ik_…>
+gh variable set AZURE_KEY_VAULT_NAME -R brandonkorous/wizeworks -b '<vault>'
+```
+
+The `gha-wizeworks-prod` identity needs `Key Vault Secrets User` on that vault.
+That grant is Terraform in the sparx repo (`terraform/bootstrap-azure/wizeworks.tf`).
+
+In development (`pnpm dev`) tracing is on, with the dashboard at `/_wizelens`
+and the HUD on the page.
+
 ## Things deliberately not configured
 
 - **Contact-form delivery.** `/api/contact` validates and returns 503 rather
