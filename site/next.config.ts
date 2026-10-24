@@ -30,6 +30,9 @@ const nextConfig: NextConfig = {
 
   poweredByHeader: false,
 
+  // Cap hi-DPI requests: the 3840 variant was a 958 ms cold transform.
+  images: { deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2560] },
+
   async headers() {
     return [
       {

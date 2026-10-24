@@ -115,6 +115,7 @@ jobs:
           file: ./Dockerfile
           push: true
           provenance: false
+          build-args: WIZELENS_RELEASE=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=site

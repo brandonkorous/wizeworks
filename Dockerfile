@@ -31,6 +31,8 @@ RUN npm install --global pnpm@10.9.0
 COPY site/package.json site/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
+ARG WIZELENS_RELEASE
+ENV WIZELENS_RELEASE=$WIZELENS_RELEASE
 COPY site/ ./
 RUN pnpm build
 
@@ -53,6 +55,9 @@ RUN apk add --no-cache libc6-compat
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
+
+ARG WIZELENS_RELEASE
+ENV WIZELENS_RELEASE=$WIZELENS_RELEASE
 
 USER node
 EXPOSE 3000
