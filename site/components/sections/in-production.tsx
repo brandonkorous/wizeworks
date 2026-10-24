@@ -1,5 +1,10 @@
-import Image from "next/image";
 import { Reveal } from "@/components/motion/reveal";
+
+const HERO_WIDTHS = [1280, 1920, 2400];
+
+function heroSet(ext: string) {
+  return HERO_WIDTHS.map((w) => `/images/machine-shop-${w}.${ext} ${w}w`).join(", ");
+}
 
 /**
  * Section 02 — Immediate proof. docs/landing.md §5.
@@ -51,16 +56,20 @@ export function InProduction() {
       aria-labelledby="production-heading"
       className="relative isolate border-b border-base-300/40"
     >
-      <Image
-        src="/images/machine-shop.jpg"
-        alt=""
-        fill
-        sizes="100vw"
-        priority
-        placeholder="blur"
-        blurDataURL="data:image/jpeg;base64,/9j/2wBDABQODxIPDRQSEBIXFRQYHjIhHhwcHj0sLiQySUBMS0dARkVQWnNiUFVtVkVGZIhlbXd7gYKBTmCNl4x9lnN+gXz/2wBDARUXFx4aHjshITt8U0ZTfHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHz/wAARCAAGAAwDASIAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAAAAMG/8QAHBAAAgICAwAAAAAAAAAAAAAAAQIAAxEhEkFR/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAH/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwDO1stiLUa1HrY2ZE8ehqIlH//Z"
-        className="-z-10 object-cover object-center"
-      />
+      <picture>
+        <source type="image/avif" srcSet={heroSet("avif")} sizes="100vw" />
+        <source type="image/webp" srcSet={heroSet("webp")} sizes="100vw" />
+        {/* Pre-sized files (scripts/make-hero.mjs): no runtime image transform. */}
+        <img
+          src="/images/machine-shop-1920.jpg"
+          srcSet={heroSet("jpg")}
+          sizes="100vw"
+          alt=""
+          fetchPriority="high"
+          decoding="async"
+          className="absolute inset-0 -z-10 h-full w-full object-cover object-center"
+        />
+      </picture>
 
       {/*
         Scrim. Legibility is not negotiated with the photograph: the band is
