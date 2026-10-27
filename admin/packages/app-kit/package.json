@@ -1,0 +1,51 @@
+{
+  "name": "@wizeworks/app-kit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Framework glue every sparx Next.js app needs and no app should own a copy of — starting with stale-build (chunk-load) detection and recovery. Not a design library: nothing here renders anything a designer would style. @wizeworks/ui is the composition layer; this is the layer beneath it that keeps a tab alive across a deploy.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./chunk-error": {
+      "types": "./src/chunk-error.ts",
+      "default": "./src/chunk-error.ts"
+    },
+    "./forwarded-for": {
+      "types": "./src/forwarded-for.ts",
+      "default": "./src/forwarded-for.ts"
+    },
+    "./public-api": {
+      "types": "./src/public-api.ts",
+      "default": "./src/public-api.ts"
+    },
+    "./stale-form-action": {
+      "types": "./src/stale-form-action.ts",
+      "default": "./src/stale-form-action.ts"
+    },
+    "./malformed-path": {
+      "types": "./src/malformed-path.ts",
+      "default": "./src/malformed-path.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --maxWorkers=1",
+    "clean": "rm -rf .turbo dist *.tsbuildinfo"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.12"
+  }
+}

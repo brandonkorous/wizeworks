@@ -1,8 +1,15 @@
-# Deploying the WizeWorks site
+# Deploying WizeWorks
 
 **Cluster:** `aks-sparx-prod-cus` (resource group `rg-sparx-prod-cus`, centralus)
 **Namespace:** `wizeworks`
-**Image:** `ghcr.io/brandonkorous/wizeworks-site`
+
+| App | Host | Image | Manifests |
+|---|---|---|---|
+| site | `wize.works` | `ghcr.io/brandonkorous/wizeworks-site` | `k8s/site/` |
+| admin | `admin.wize.works` | `ghcr.io/brandonkorous/wizeworks-admin` | `k8s/admin/` |
+
+`k8s/namespace.yaml` is applied on its own before either app. Admin's secrets
+and its links into sparx-prod are in `admin/README.md`.
 
 WizeWorks is a **co-tenant** on the shared sparx cluster, the same way silicaui,
 kanninja, jotacular and agconn are: its own namespace, its own repository, its
@@ -12,7 +19,7 @@ table, which lives in the **sparx repo**, not here.
 ```
 push to main  →  verify (typecheck + build)
               →  build & push image to GHCR, tagged sha-<short> and latest
-              →  az login (OIDC)  →  kustomize set image <sha>  →  kubectl apply -k
+              →  az login (OIDC)  →  kustomize set image <sha>  →  kubectl apply -k k8s/<app>
               →  rollout status   →  in-cluster smoke test of /api/health
 ```
 

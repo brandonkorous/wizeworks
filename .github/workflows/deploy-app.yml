@@ -1,0 +1,387 @@
+name: Deploy one app
+
+# The steps every app in this repo ships with, called once per app by
+# deploy.yml. Each app is a Next.js standalone image built from the repo root
+# (`<app>/Dockerfile`), pushed to GHCR as `wizeworks-<app>`, and rolled out from
+# `k8s/<app>/` into the shared `wizeworks` namespace.
+#
+# Called with `deploy: false` (pull requests), it only verifies: install,
+# typecheck, test, build.
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        description: The app's directory, and its name everywhere else (site, admin).
+        type: string
+        required: true
+      deploy:
+        description: false = verify only.
+        type: boolean
+        default: true
+      health-path:
+        description: The path the in-cluster smoke test fetches.
+        type: string
+        required: true
+      vault-secrets:
+        description: |
+          One `ENV_NAME=vault-secret-name` per line, read from Key Vault into the
+          `<app>-secrets` Secret. A trailing `?` makes one optional. A vault name
+          ending in `-b64` holds base64 of the real bytes and goes into the
+          Secret's `data` untouched, never through a text parser.
+        type: string
+        default: ''
+      actions-key-secret:
+        description: Vault secret holding the Next server-action key the image is built with (optional).
+        type: string
+        default: ''
+      warm-urls:
+        description: Public URLs to fetch after a rollout, one per line (optional).
+        type: string
+        default: ''
+
+env:
+  RESOURCE_GROUP: rg-sparx-prod-cus
+  CLUSTER: aks-sparx-prod-cus
+  NAMESPACE: wizeworks
+  # Hyphenated, not slashed. `ghcr.io/brandonkorous/wizeworks-site` is a
+  # different package from `.../wizeworks/site`, and addressing the wrong one
+  # fails as a 401 that reads like a missing tag.
+  IMAGE: ghcr.io/brandonkorous/wizeworks-${{ inputs.app }}
+
+jobs:
+  # ------------------------------------------------------------------
+  # Gate the build. Cheap, and it catches the class of thing that would
+  # otherwise be discovered by a rollout that never becomes ready.
+  # ------------------------------------------------------------------
+  verify:
+    name: Typecheck, test & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          cache-dependency-path: ${{ inputs.app }}/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      # An app that is a workspace (admin) checks its packages too; a
+      # single-package app (site) checks only itself.
+      - name: Typecheck & test
+        run: |
+          set -euo pipefail
+          if [ -f pnpm-workspace.yaml ]; then
+            pnpm -r --include-workspace-root --if-present typecheck
+            pnpm -r --include-workspace-root --if-present test
+          else
+            pnpm run --if-present typecheck
+            pnpm run --if-present test
+          fi
+      - run: pnpm build
+
+  build:
+    name: Build & push image
+    if: inputs.deploy
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: azure/login@v2
+        if: inputs.actions-key-secret != ''
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # The key Next derives server-action ids from. The same key reaches the
+      # running pod as NEXT_SERVER_ACTIONS_ENCRYPTION_KEY, so a page left open
+      # across a deploy still posts to an action the new build knows.
+      # Optional: without it Next picks its own key, as before.
+      - name: Server-action key from Key Vault
+        if: inputs.actions-key-secret != ''
+        env:
+          VAULT: ${{ vars.AZURE_KEY_VAULT_NAME }}
+          NAME: ${{ inputs.actions-key-secret }}
+        run: |
+          set -euo pipefail
+          if [ -n "$VAULT" ] && key=$(az keyvault secret show --vault-name "$VAULT" --name "$NAME" --query value -o tsv 2>/dev/null); then
+            echo "::add-mask::$key"
+            printf '%s' "$key" > "$RUNNER_TEMP/next_actions_key"
+          else
+            echo "::notice::No $NAME in Key Vault: Next picks its own server-action key."
+            : > "$RUNNER_TEMP/next_actions_key"
+          fi
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          # Repo root, with .dockerignore excluding docs/ and images/ — that
+          # takes the context from ~147 MB to a few MB.
+          context: .
+          file: ./${{ inputs.app }}/Dockerfile
+          push: true
+          provenance: false
+          build-args: |
+            WIZELENS_RELEASE=${{ github.sha }}
+            APP_VERSION=${{ github.sha }}
+          secret-files: ${{ inputs.actions-key-secret != '' && format('next_actions_key={0}/next_actions_key', runner.temp) || '' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ inputs.app }}
+          cache-to: type=gha,mode=min,scope=${{ inputs.app }},ignore-error=true
+
+  # ------------------------------------------------------------------
+  # Prove the kubelet will be able to pull, BEFORE asking it to.
+  #
+  # Nothing in k8s/ carries an imagePullSecret — the cluster pulls anonymously,
+  # matching kanninja and jotDOJO. If the GHCR package is private, that fails as
+  # ImagePullBackOff, discovered as a rollout that never becomes ready.
+  #
+  # GHCR answers an unauthorised anonymous manifest fetch with 404, NOT 401 — it
+  # hides existence rather than admitting it. So a 404 here means private, or a
+  # missing tag, or an Accept header that does not cover the manifest's media
+  # type. The step below tells those apart instead of guessing.
+  # ------------------------------------------------------------------
+  verify-pullable:
+    name: Verify the image pulls anonymously
+    if: inputs.deploy
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Anonymous pull check
+        env:
+          PKG: wizeworks-${{ inputs.app }}
+        run: |
+          set -euo pipefail
+          TAG="sha-$(echo '${{ github.sha }}' | cut -c1-7)"
+
+          TOKEN=$(curl -fsS "https://ghcr.io/token?scope=repository:brandonkorous/${PKG}:pull&service=ghcr.io" | jq -r .token)
+
+          # ALL FOUR media types, and the last two are the ones that matter.
+          # This build is SINGLE-PLATFORM (no `platforms:`, and `provenance:
+          # false` suppresses the attestation index), so its manifest is a plain
+          # `application/vnd.oci.image.manifest.v1+json` — NOT an index or a
+          # manifest list. A registry serves a manifest only if its type is in
+          # Accept, and GHCR reports the miss as 404, which is indistinguishable
+          # from a private package or a missing tag. Listing only the multi-arch
+          # types here failed a perfectly pullable image on 2026-08-28.
+          ACCEPT='application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json'
+
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: ${ACCEPT}" \
+            "https://ghcr.io/v2/brandonkorous/${PKG}/manifests/${TAG}")
+
+          if [ "$CODE" = "200" ]; then
+            echo "OK — ghcr.io/brandonkorous/${PKG}:${TAG} is anonymously pullable."
+            exit 0
+          fi
+
+          # A bare 404 has three causes and they need different fixes, so
+          # discriminate before reporting. An anonymous TAGS LIST succeeds only
+          # on a public package, which separates "private" from the rest.
+          TAGS=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+            "https://ghcr.io/v2/brandonkorous/${PKG}/tags/list")
+
+          echo "::error::The image is NOT anonymously pullable (HTTP ${CODE})."
+          echo "::error::The cluster pulls without credentials, so the rollout"
+          echo "::error::would fail as ImagePullBackOff."
+          echo "::error::"
+
+          if echo "$TAGS" | grep -q '"tags"'; then
+            echo "::error::The package IS public — anonymous tag listing worked:"
+            echo "::error::  ${TAGS}"
+            echo "::error::"
+            if echo "$TAGS" | grep -q "\"${TAG}\""; then
+              echo "::error::and the tag ${TAG} EXISTS. So this is a media-type"
+              echo "::error::mismatch, not a permissions problem: the manifest's"
+              echo "::error::type is not in this job's Accept header."
+            else
+              echo "::error::but the tag ${TAG} is MISSING. The build job pushed a"
+              echo "::error::different tag than this job asked for."
+            fi
+          else
+            echo "::error::Anonymous tag listing was refused, so the package is"
+            echo "::error::PRIVATE. Fix once, then re-run this workflow:"
+            echo "::error::  gh api -X PATCH /user/packages/container/${PKG} -f visibility=public"
+            echo "::error::or Packages -> ${PKG} -> Package settings -> Change visibility."
+          fi
+          exit 1
+
+  deploy:
+    name: Roll out to AKS
+    if: inputs.deploy
+    needs: [build, verify-pullable]
+    runs-on: ubuntu-latest
+    env:
+      APP: ${{ inputs.app }}
+      SECRET: ${{ inputs.app }}-secrets
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get cluster credentials
+        run: |
+          set -euo pipefail
+          az aks get-credentials \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$CLUSTER" \
+            --overwrite-existing
+          kubectl apply -f k8s/namespace.yaml
+
+      # Key Vault -> Kubernetes Secret, the same flow as kanninja and rocketease.
+      # Runs before the apply, so a new pod starts with its secrets in place.
+      #
+      # A REQUIRED secret that cannot be read fails the deploy here, by name.
+      # The alternative is a pod that starts, passes its probes, and fails on
+      # the first sign-in. An OPTIONAL one is skipped with a notice.
+      #
+      # Every value goes into the Secret's `data` as base64, built with jq from
+      # files, never through $(…) or --from-literal: command substitution strips
+      # trailing newlines, and OPERATOR_AUTH_SECRET's last byte is a carriage
+      # return that Better Auth uses as key material.
+      - name: Secrets from Key Vault
+        if: inputs.vault-secrets != ''
+        env:
+          VAULT: ${{ vars.AZURE_KEY_VAULT_NAME }}
+          SECRETS: ${{ inputs.vault-secrets }}
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/secrets"; mkdir -p "$work"
+          echo '{}' > "$work/data.json"
+          missing=0
+          while IFS= read -r line; do
+            line="${line%%#*}"; line="$(echo "$line" | xargs)"
+            [ -z "$line" ] && continue
+            env_name="${line%%=*}"; name="${line#*=}"
+            optional=false
+            case "$name" in *\?) optional=true; name="${name%\?}" ;; esac
+
+            if [ -z "$VAULT" ] || ! az keyvault secret show --vault-name "$VAULT" \
+                 --name "$name" -o json > "$work/one.json" 2>/dev/null; then
+              if [ "$optional" = true ]; then
+                echo "::notice::$name is not in Key Vault ${VAULT:-(unset)}: $env_name stays unset."
+                continue
+              fi
+              echo "::error::$name could not be read from Key Vault ${VAULT:-(AZURE_KEY_VAULT_NAME is unset)}. $APP needs it as $env_name."
+              missing=1
+              continue
+            fi
+
+            case "$name" in
+              # Already base64 of the real bytes: it IS the `data` value.
+              *-b64) jq -j '.value' "$work/one.json" | tr -d '\n' > "$work/one.b64" ;;
+              *)     jq -j '.value' "$work/one.json" | base64 -w0 > "$work/one.b64" ;;
+            esac
+            jq --arg k "$env_name" --rawfile v "$work/one.b64" '. + {($k): $v}' \
+              "$work/data.json" > "$work/next.json"
+            mv "$work/next.json" "$work/data.json"
+          done <<< "$SECRETS"
+          rm -f "$work/one.json" "$work/one.b64"
+          [ "$missing" = 0 ] || exit 1
+
+          jq --arg name "$SECRET" --arg ns "$NAMESPACE" \
+            '{apiVersion: "v1", kind: "Secret", type: "Opaque",
+              metadata: {name: $name, namespace: $ns}, data: .}' \
+            "$work/data.json" | kubectl apply -f -
+          echo "$SECRET: $(jq 'length' "$work/data.json") key(s)."
+          rm -rf "$work"
+
+      # Pin to the immutable SHA tag rather than rolling `:latest`. A rollout to
+      # a mutable tag is not reproducible and cannot be rolled back by revision.
+      - name: Pin image and apply
+        run: |
+          set -euo pipefail
+          SHA_TAG="sha-$(git rev-parse --short HEAD)"
+          echo "Deploying ${IMAGE}:${SHA_TAG}"
+          cd "k8s/$APP"
+          kustomize edit set image "${IMAGE}=${IMAGE}:${SHA_TAG}"
+          cd -
+          kubectl apply -k "k8s/$APP/"
+
+      # A pod reads its Secrets only when it starts, and a deploy whose image
+      # did not change leaves the pods alone, so a changed key went unread.
+      # A hash of the Secret on the pod template changes exactly when it does,
+      # and that change rolls the pods.
+      - name: Restart pods when their Secrets change
+        if: inputs.vault-secrets != ''
+        run: |
+          set -euo pipefail
+          if ! kubectl get secret "$SECRET" -n "$NAMESPACE" >/dev/null 2>&1; then
+            echo "No $SECRET yet: nothing to hash."
+            exit 0
+          fi
+          hash=$(kubectl get secret "$SECRET" -n "$NAMESPACE" \
+            -o go-template='{{range $k, $v := .data}}{{$k}}={{$v}};{{end}}' \
+            | sha256sum | cut -c1-16)
+          patch="{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"wizeworks/secrets-hash\":\"$hash\"}}}}}"
+          kubectl patch deployment "$APP" -n "$NAMESPACE" --type merge -p "$patch"
+
+      - name: Wait for rollout
+        run: |
+          set -euo pipefail
+          if ! kubectl rollout status -n "$NAMESPACE" "deploy/$APP" --timeout=300s; then
+            echo "::error::Rollout failed — recent pod state:"
+            kubectl get pods -n "$NAMESPACE" -o wide
+            kubectl describe "deploy/$APP" -n "$NAMESPACE" | tail -40
+            kubectl logs -n "$NAMESPACE" -l "app.kubernetes.io/name=$APP" --tail=100 --all-containers || true
+            exit 1
+          fi
+
+      # Proves the container actually serves, from inside the cluster. The
+      # public hostname depends on a Caddy route that lives in the sparx repo,
+      # so a green rollout here does NOT mean the host resolves.
+      - name: Smoke test the Service
+        env:
+          HEALTH: ${{ inputs.health-path }}
+        run: |
+          set -euo pipefail
+          kubectl run "smoke-$APP-$RANDOM" \
+            --namespace "$NAMESPACE" \
+            --image=curlimages/curl:8.10.1 \
+            --restart=Never --rm -i --quiet --command -- \
+            curl -fsS --max-time 10 "http://$APP.$NAMESPACE.svc.cluster.local$HEALTH"
+
+      # Non-fatal: primes the page and image caches after a restart so the
+      # first visitor does not pay the cold-start cost.
+      - name: Warm up
+        if: inputs.warm-urls != ''
+        continue-on-error: true
+        env:
+          URLS: ${{ inputs.warm-urls }}
+        run: |
+          while IFS= read -r url; do
+            [ -z "$url" ] && continue
+            curl -s -o /dev/null --max-time 15 \
+              -w "%{http_code} %{time_total}s ${url}\n" \
+              -H 'Accept: image/avif,image/webp,*/*' \
+              "$url" || true
+          done <<< "$URLS"
