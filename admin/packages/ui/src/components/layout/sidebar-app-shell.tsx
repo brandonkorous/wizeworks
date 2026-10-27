@@ -1,0 +1,478 @@
+'use client';
+
+import * as React from 'react';
+import { ChevronsLeft, ChevronsRight, Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Drawer, DrawerContent, DrawerTitle } from '@wizeworks/silicaui-react';
+import { Button } from '../primitives/button';
+import { useMediaQuery } from '../../hooks/use-media-query';
+import { cn } from '@wizeworks/silica-corrections';
+
+// SidebarAppShell is the canonical authenticated-app layout: pinned sidebar +
+// top header + scrolling content. It owns the responsive concerns that
+// every consumer would otherwise re-implement:
+//
+//   - Viewport-locked height (h-screen + overflow-hidden) so only the
+//     content region scrolls; the sidebar and header stay parked.
+//   - Skip-to-content link as the first focusable element (WCAG 2.4.1).
+//     Target id is `main-content` — do not collide with it elsewhere.
+//   - Focus moves to the content region on `pathname` change so keyboard
+//     users don't have to re-traverse the sidebar (WCAG 2.4.3).
+//   - Below `md`, the desktop sidebar hides and a hamburger in the header
+//     opens an equivalent left-slide Drawer with the same nav tree. The
+//     drawer auto-closes on `pathname` change.
+//   - When `detail` is present:
+//       md+: the main region splits into [content | drag handle | detail],
+//            with a user-resizable ratio persisted in localStorage.
+//       <md: detail renders as a right-slide overlay Drawer.
+//     The detail content itself is opaque to the shell — it owns its own
+//     header chrome (close button etc.) and calls `onDetailClose` to
+//     dismiss.
+//
+// Navigation is a two-column model on desktop (docs/24 §5): a thin icon
+// `rail` (module switching + Home/Search/Settings) and a `panel` whose
+// contents follow context (a module's sections, or Favorites/Recents at the
+// platform level). Below `md` both collapse into the hamburger Drawer, which
+// renders the single vertical `mobileNav` tree instead.
+//
+// The rail is collapsible: a toggle at its foot expands it from icon-only to
+// icon + label (so the module glyphs are legible) and the choice persists in
+// localStorage. The expanded state is published via `RailExpandedContext` —
+// the `rail` content reads it with `useRailExpanded()` to grow labels.
+//
+// The contextual `panel` is independently collapsible to a thin strip (its own
+// foot toggle, also persisted) — so dense, design-centric surfaces like the
+// Builder can hand the freed width to their canvas.
+
+const RAIL_EXPANDED_STORAGE_KEY = 'sparx:rail-expanded';
+const PANEL_COLLAPSED_STORAGE_KEY = 'sparx:panel-collapsed';
+const DETAIL_WIDTH_STORAGE_KEY = 'sparx:detail-width';
+
+// Published to the `rail` subtree so it can render labels alongside icons when
+// the user expands the rail.
+const RailExpandedContext = React.createContext(false);
+
+/** Read whether the icon rail is currently expanded to show labels. */
+export function useRailExpanded(): boolean {
+  return React.useContext(RailExpandedContext);
+}
+
+// Published to the `panel` subtree so its nav can render icon-only (and surface
+// labels as tooltips) when the contextual panel is collapsed to a thin strip.
+const PanelCollapsedContext = React.createContext(false);
+
+/** Read whether the contextual panel is collapsed to its icon-only strip. */
+export function usePanelCollapsed(): boolean {
+  return React.useContext(PanelCollapsedContext);
+}
+const DETAIL_WIDTH_DEFAULT = 40; // percent of main area
+const DETAIL_WIDTH_MIN = 25;
+const DETAIL_WIDTH_MAX = 65;
+
+export interface SidebarAppShellProps {
+  /** Desktop icon rail (md+) — module switcher + Home/Search/Settings. */
+  rail: React.ReactNode;
+  /**
+   * Desktop contextual panel (md+) — a module's sections, settings sub-pages,
+   * etc. Pass `null` when the current context has no secondary nav: the shell
+   * drops the panel column entirely (the rail stands alone) rather than leaving
+   * an empty 240px gutter.
+   */
+  panel?: React.ReactNode;
+  /** Vertical nav tree rendered in the mobile drawer (below md). */
+  mobileNav: React.ReactNode;
+  /** Left-aligned header content (e.g. breadcrumbs). */
+  headerStart?: React.ReactNode;
+  /** Right-aligned content for the top header (user menu, etc). */
+  headerActions?: React.ReactNode;
+  /**
+   * Optional right-pane content (a detail view, comments, etc.). When
+   * present, the main region splits on md+ and renders as a Drawer
+   * overlay below md. Pass `null` / undefined when there's nothing to
+   * show — the shell handles the empty state.
+   */
+  detail?: React.ReactNode;
+  /**
+   * Fires when the user dismisses the detail pane (close button, ESC,
+   * mobile drawer swipe-close, etc.). The caller is expected to clear
+   * whatever state opened the detail (typically a URL query param).
+   */
+  onDetailClose?: () => void;
+  /**
+   * Current route pathname. When this changes the mobile drawer closes
+   * and focus moves to the content region. Pass `usePathname()` from
+   * `next/navigation`.
+   */
+  pathname?: string | null;
+  /**
+   * a11y label for the mobile drawer + hamburger trigger.
+   * Defaults to "Primary navigation".
+   */
+  mobileNavLabel?: string;
+  /** a11y label for the detail mobile overlay. Defaults to "Detail view". */
+  detailMobileLabel?: string;
+  children: React.ReactNode;
+}
+
+export function SidebarAppShell({
+  rail,
+  panel,
+  mobileNav,
+  headerStart,
+  headerActions,
+  detail,
+  onDetailClose,
+  pathname,
+  mobileNavLabel = 'Primary navigation',
+  detailMobileLabel = 'Detail view',
+  children,
+}: SidebarAppShellProps) {
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const isFirstRender = React.useRef(true);
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+  const detailWidth = useDetailWidth();
+  const railExpanded = useRailExpandedState();
+  const panelCollapsed = usePanelCollapsedState();
+
+  React.useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    setMobileNavOpen(false);
+    contentRef.current?.focus({ preventScroll: true });
+  }, [pathname]);
+
+  const showInlineDetail = Boolean(detail) && isDesktop;
+  const showOverlayDetail = Boolean(detail) && !isDesktop;
+
+  return (
+    <div className="flex h-screen overflow-hidden">
+      <RailExpandedContext.Provider value={railExpanded.value}>
+        <div className="hidden md:flex">
+          <nav
+            aria-label={mobileNavLabel}
+            className={cn(
+              'border-base-300 bg-base-100 flex h-full shrink-0 flex-col gap-1 border-r py-2 transition-[width] duration-150 ease-out',
+              railExpanded.value ? 'w-52 items-stretch px-2' : 'w-14 items-center'
+            )}
+          >
+            {rail}
+            <RailToggle
+              expanded={railExpanded.value}
+              onToggle={() => railExpanded.setValue(!railExpanded.value)}
+            />
+          </nav>
+          {panel != null && (
+            <PanelCollapsedContext.Provider value={panelCollapsed.value}>
+              <div
+                className={cn(
+                  'border-base-300 bg-base-100 flex h-full shrink-0 flex-col border-r transition-[width] duration-150 ease-out',
+                  panelCollapsed.value ? 'w-14' : 'w-60'
+                )}
+              >
+                {/* Panel content stays mounted when collapsed so it can render
+                    icon-only (via usePanelCollapsed); the toggle below it stays
+                    pinned to the foot — no chasing it to the top. */}
+                <div className="min-h-0 flex-1 overflow-hidden">{panel}</div>
+                <PanelToggle
+                  collapsed={panelCollapsed.value}
+                  onToggle={() => panelCollapsed.setValue(!panelCollapsed.value)}
+                />
+              </div>
+            </PanelCollapsedContext.Provider>
+          )}
+        </div>
+      </RailExpandedContext.Provider>
+
+      <Drawer open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+        <DrawerContent side="left" className="flex w-72 max-w-[85vw] flex-col gap-1 p-3">
+          <DrawerTitle className="sr-only">{mobileNavLabel}</DrawerTitle>
+          {mobileNav}
+        </DrawerContent>
+      </Drawer>
+
+      <main className="flex min-w-0 flex-1 flex-col">
+        <header className="border-base-300 bg-base-100 flex h-12 shrink-0 items-center gap-2 border-b px-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="md:hidden"
+            aria-label={`Open ${mobileNavLabel.toLowerCase()}`}
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen(true)}
+          >
+            <Menu className="h-4 w-4" />
+          </Button>
+          {headerStart ? (
+            <div className="min-w-0 flex-1">{headerStart}</div>
+          ) : (
+            <div className="flex-1" />
+          )}
+          {headerActions ? (
+            <div className="flex shrink-0 items-center gap-1">{headerActions}</div>
+          ) : null}
+        </header>
+
+        {showInlineDetail ? (
+          <div className="flex min-h-0 flex-1">
+            <div
+              ref={contentRef}
+              id="main-content"
+              tabIndex={-1}
+              style={{ flexBasis: `${100 - detailWidth.value}%` }}
+              className="relative min-w-0 overflow-y-auto focus:outline-none"
+            >
+              {children}
+            </div>
+            <DetailDragHandle width={detailWidth} />
+            <aside
+              aria-label={detailMobileLabel}
+              style={{ flexBasis: `${detailWidth.value}%` }}
+              className="border-base-300 bg-base-100 relative min-w-0 overflow-y-auto border-l"
+            >
+              {detail}
+            </aside>
+          </div>
+        ) : (
+          <div
+            ref={contentRef}
+            id="main-content"
+            tabIndex={-1}
+            className="relative min-h-0 flex-1 overflow-y-auto focus:outline-none"
+          >
+            {children}
+          </div>
+        )}
+      </main>
+
+      {showOverlayDetail && (
+        <Drawer
+          open={showOverlayDetail}
+          onOpenChange={(open) => {
+            if (!open) onDetailClose?.();
+          }}
+        >
+          <DrawerContent side="right" className="flex w-full max-w-md flex-col overflow-y-auto">
+            <DrawerTitle className="sr-only">{detailMobileLabel}</DrawerTitle>
+            {detail}
+          </DrawerContent>
+        </Drawer>
+      )}
+    </div>
+  );
+}
+
+// ── Rail expand/collapse ───────────────────────────────────
+
+interface RailExpandedState {
+  value: boolean;
+  setValue: (next: boolean) => void;
+}
+
+function useRailExpandedState(): RailExpandedState {
+  const [value, setValueState] = React.useState(false);
+
+  React.useEffect(() => {
+    try {
+      if (window.localStorage.getItem(RAIL_EXPANDED_STORAGE_KEY) === 'true') {
+        setValueState(true);
+      }
+    } catch {
+      // storage disabled — stay collapsed
+    }
+  }, []);
+
+  const setValue = React.useCallback((next: boolean) => {
+    setValueState(next);
+    try {
+      window.localStorage.setItem(RAIL_EXPANDED_STORAGE_KEY, String(next));
+    } catch {
+      // ignore — in-memory state still updates
+    }
+  }, []);
+
+  return { value, setValue };
+}
+
+function RailToggle({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={expanded ? 'Collapse navigation' : 'Expand navigation'}
+      aria-label={expanded ? 'Collapse navigation' : 'Expand navigation'}
+      aria-expanded={expanded}
+      className={cn(
+        'hover:bg-base-200 focus-ring flex h-8 items-center rounded-md text-sm font-medium transition-colors',
+        expanded ? 'w-full justify-start gap-2 px-2' : 'w-8 justify-center'
+      )}
+    >
+      {expanded ? (
+        <PanelLeftClose className="h-4 w-4 shrink-0" />
+      ) : (
+        <PanelLeftOpen className="h-4 w-4 shrink-0" />
+      )}
+      {expanded && <span className="flex-1 truncate text-left">Collapse</span>}
+    </button>
+  );
+}
+
+// ── Contextual panel collapse ──────────────────────────────
+// The second nav column (a module's sections, settings sub-pages) collapses to a
+// thin strip — useful on dense, design-centric surfaces (the Builder) where the
+// canvas wants the width back. The choice persists in localStorage, like the rail.
+
+interface PanelCollapsedState {
+  value: boolean;
+  setValue: (next: boolean) => void;
+}
+
+function usePanelCollapsedState(): PanelCollapsedState {
+  const [value, setValueState] = React.useState(false);
+
+  React.useEffect(() => {
+    try {
+      if (window.localStorage.getItem(PANEL_COLLAPSED_STORAGE_KEY) === 'true') {
+        setValueState(true);
+      }
+    } catch {
+      // storage disabled — stay expanded
+    }
+  }, []);
+
+  const setValue = React.useCallback((next: boolean) => {
+    setValueState(next);
+    try {
+      window.localStorage.setItem(PANEL_COLLAPSED_STORAGE_KEY, String(next));
+    } catch {
+      // ignore — in-memory state still updates
+    }
+  }, []);
+
+  return { value, setValue };
+}
+
+function PanelToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={collapsed ? 'Show panel' : 'Hide panel'}
+      aria-label={collapsed ? 'Show panel' : 'Hide panel'}
+      aria-expanded={!collapsed}
+      className={cn(
+        'hover:border-base-300 hover:bg-base-200 focus-ring flex h-9 shrink-0 items-center border-t text-sm font-medium transition-colors',
+        collapsed ? 'justify-center' : 'w-full justify-start gap-2 px-3'
+      )}
+    >
+      {collapsed ? (
+        <ChevronsRight className="h-4 w-4 shrink-0" />
+      ) : (
+        <>
+          <ChevronsLeft className="h-4 w-4 shrink-0" />
+          <span className="flex-1 truncate text-left">Collapse</span>
+        </>
+      )}
+    </button>
+  );
+}
+
+// ── Resizable detail width ─────────────────────────────────
+
+interface DetailWidthState {
+  value: number;
+  setValue: (next: number) => void;
+}
+
+function useDetailWidth(): DetailWidthState {
+  const [value, setValueState] = React.useState<number>(DETAIL_WIDTH_DEFAULT);
+
+  React.useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(DETAIL_WIDTH_STORAGE_KEY);
+      if (raw) {
+        const n = Number.parseFloat(raw);
+        if (Number.isFinite(n) && n >= DETAIL_WIDTH_MIN && n <= DETAIL_WIDTH_MAX) {
+          setValueState(n);
+        }
+      }
+    } catch {
+      // storage disabled — fall back to default
+    }
+  }, []);
+
+  const setValue = React.useCallback((next: number) => {
+    const clamped = Math.min(DETAIL_WIDTH_MAX, Math.max(DETAIL_WIDTH_MIN, next));
+    setValueState(clamped);
+    try {
+      window.localStorage.setItem(DETAIL_WIDTH_STORAGE_KEY, String(clamped));
+    } catch {
+      // ignore — in-memory state still updates
+    }
+  }, []);
+
+  return { value, setValue };
+}
+
+function DetailDragHandle({ width }: { width: DetailWidthState }) {
+  const startRef = React.useRef<{ clientX: number; widthAtStart: number } | null>(null);
+
+  function onMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    e.preventDefault();
+    startRef.current = { clientX: e.clientX, widthAtStart: width.value };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    function onMove(ev: MouseEvent) {
+      if (!startRef.current) return;
+      const containerWidth = e.currentTarget.parentElement?.clientWidth ?? 0;
+      if (containerWidth === 0) return;
+      const deltaPx = ev.clientX - startRef.current.clientX;
+      // Dragging right shrinks the detail pane (detail is on the right).
+      const deltaPct = (deltaPx / containerWidth) * 100;
+      width.setValue(startRef.current.widthAtStart - deltaPct);
+    }
+    function onUp() {
+      startRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      width.setValue(width.value + 2);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      width.setValue(width.value - 2);
+    }
+  }
+
+  // WAI-ARIA: `role="separator"` with `aria-valuenow` IS interactive (it's
+  // a resize handle / window splitter). jsx-a11y's rule doesn't model this
+  // exception — disable the two affected rules on the element.
+  return (
+    /* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */
+    <div
+      role="separator"
+      tabIndex={0}
+      aria-orientation="vertical"
+      aria-label="Resize detail pane"
+      aria-valuemin={DETAIL_WIDTH_MIN}
+      aria-valuemax={DETAIL_WIDTH_MAX}
+      aria-valuenow={width.value}
+      onMouseDown={onMouseDown}
+      onKeyDown={onKeyDown}
+      className="group hover:bg-base-300 focus-visible:bg-primary relative w-1 shrink-0 cursor-col-resize bg-transparent focus-visible:outline-none"
+    >
+      <div className="absolute inset-y-0 -right-1 -left-1" />
+    </div>
+    /* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */
+  );
+}

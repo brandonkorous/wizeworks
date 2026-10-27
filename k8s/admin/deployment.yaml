@@ -1,0 +1,149 @@
+# The WizeWorks operator console — admin.wize.works.
+#
+# A WizeWorks app that operates sparx. It lives in this namespace and ships from
+# this repo, but it still reaches into sparx-prod for three things, all by
+# in-cluster address (there are no NetworkPolicies between the namespaces):
+#
+#   api-rest   every console read and write, through /internal/operator/*,
+#              authenticated with SPARX_INTERNAL_OPERATOR_TOKEN
+#   Postgres   the wize_admin schema only, as the `wize_operator` role, for
+#              operator sign-in (OPERATOR_DATABASE_URL). Its migrations live in
+#              the sparx repo, because the database does.
+#   NATS       `email.send` for operator password emails; sparx's email-worker
+#              renders and sends them
+#
+# Secrets come from Key Vault `kv-wizeworks-prod-cus` into `admin-secrets`; the
+# deploy workflow lists which, and admin/README.md says how they got there.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin
+  namespace: wizeworks
+  labels:
+    app.kubernetes.io/name: admin
+    app.kubernetes.io/part-of: wizeworks
+spec:
+  # 1 replica: a staff console with a handful of operators, on a shared node.
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: admin
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: admin
+        app.kubernetes.io/part-of: wizeworks
+    spec:
+      # No imagePullSecrets — the GHCR package is public, like the site's.
+      containers:
+        - name: admin
+          image: ghcr.io/brandonkorous/wizeworks-admin:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            # OPERATOR_DATABASE_URL, OPERATOR_AUTH_SECRET,
+            # SPARX_INTERNAL_OPERATOR_TOKEN, and OPERATOR_BOOTSTRAP_PASSWORD
+            # when the vault has it.
+            - secretRef:
+                name: admin-secrets
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: '3000'
+            - name: HOSTNAME
+              value: '0.0.0.0'
+            - name: SERVICE_NAME
+              value: admin
+            # Better Auth checks request origins against this.
+            - name: OPERATOR_AUTH_URL
+              value: https://admin.wize.works
+            - name: SPARX_API_REST_URL
+              value: http://api-rest.sparx-prod.svc.cluster.local:3000
+            # The platform tenant, which operator emails are attributed to.
+            - name: SPARX_PLATFORM_TENANT_ID
+              value: 1bfef66a-a489-4e0f-99fd-f041adc7ffaa
+            # Unset is not a fallback: @wizeworks/events throws under
+            # NODE_ENV=production without EVENT_BROKER, so a missing value fails
+            # the rollout instead of dropping password emails.
+            - name: EVENT_BROKER
+              value: nats
+            - name: EVENT_BROKER_URL
+              value: nats://nats.sparx-prod.svc.cluster.local:4222
+            # This pod's share of the Postgres connection budget. The budget is
+            # counted in the sparx repo (k8s/azure/apps/db-budget.yaml), which
+            # keeps 2 for this console.
+            - name: OPERATOR_DB_POOL_MAX
+              value: '2'
+            # The key this image was built with, so server-action ids match
+            # across releases. Optional: without it Next uses the built-in key.
+            - name: NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: admin-secrets
+                  key: NEXT_ACTIONS_KEY_ADMIN
+                  optional: true
+            # WizeLens, send-only, project WizeWorks. Optional: a missing key
+            # leaves the console running and untraced.
+            - name: WIZELENS_ENABLED
+              value: 'true'
+            - name: WIZELENS_HUB
+              value: https://app.wizelens.com
+            - name: WIZELENS_SAMPLE_RATE
+              value: '0.25'
+            - name: WIZELENS_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: admin-secrets
+                  key: WIZELENS_KEY_ADMIN
+                  optional: true
+          resources:
+            requests:
+              cpu: '25m'
+              memory: '96Mi'
+            limits:
+              memory: '640Mi'
+          # /health, never a rendered page: every other route redirects into the
+          # auth flow, so probing `/` would tie pod health to the auth stack.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
+            seccompProfile:
+              type: RuntimeDefault
+          lifecycle:
+            preStop:
+              exec:
+                command: ['/bin/sh', '-c', 'sleep 10']
+      terminationGracePeriodSeconds: 30

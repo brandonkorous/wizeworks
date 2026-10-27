@@ -1,0 +1,15 @@
+# The operator console and the shared code it was built on, copied out of the
+# sparx monorepo when the console became a WizeWorks app in its own right. These
+# packages are now this app's own: they change when the console needs them to,
+# not when sparx changes its copies.
+#
+# ONE CONTRACT STILL CROSSES THE REPOS. packages/operator is the client for
+# api-rest's /internal/operator/* routes, which live in sparx. Change a route
+# there and this client has to follow, in a commit here.
+packages:
+  - 'packages/*'
+
+# The @wizeworks/silicaui family, kept on one version.
+catalog:
+  '@wizeworks/silicaui': ^0.60.3
+  '@wizeworks/silicaui-react': ^0.60.3

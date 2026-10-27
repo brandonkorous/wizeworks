@@ -1,7 +1,13 @@
 name: Build & Deploy to AKS
 
-# Builds the marketing site image, pushes it to GHCR, and rolls it out to the
-# shared `aks-sparx-prod-cus` cluster in a `wizeworks` namespace of its own.
+# Two apps ship from this repo, each to the shared `aks-sparx-prod-cus` cluster
+# in the `wizeworks` namespace:
+#
+#   site/    wize.works          the marketing site
+#   admin/   admin.wize.works    the operator console
+#
+# A push to main deploys only the app whose files changed; the steps themselves
+# are in deploy-app.yml. A pull request runs the same checks without deploying.
 #
 # WizeWorks is a CO-TENANT here, the same way silicaui, kanninja, jotacular and
 # agconn are: its own namespace, its own repo, its own image. The only shared
@@ -21,7 +27,8 @@ name: Build & Deploy to AKS
 # subject it RECEIVED, never the one it expected. Read it back rather than
 # assembling it:
 #
-#   gh api repos/brandonkorous/wizeworks/actions/oidc/customization/sub #     --jq .sub_claim_prefix
+#   gh api repos/brandonkorous/wizeworks/actions/oidc/customization/sub \
+#     --jq .sub_claim_prefix
 #
 # The credential is provisioned by Terraform, not by hand — see
 # terraform/bootstrap-azure/wizeworks.tf in the sparx repo. The three AZURE_*
@@ -31,290 +38,108 @@ name: Build & Deploy to AKS
 on:
   push:
     branches: [main]
-    paths:
-      # Docs and mockups do not produce a deployment. The repo root carries
-      # ~146 MB of concept PNGs and three long specs; editing those should not
-      # roll production.
-      - 'site/**'
-      - 'k8s/**'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - '.github/workflows/deploy.yml'
+  pull_request:
   workflow_dispatch:
+    inputs:
+      app:
+        description: Which app to deploy
+        type: choice
+        options: [both, site, admin]
+        default: both
 
 permissions:
   contents: read
   id-token: write # federated auth to Azure
   packages: write # push to GHCR
 
-env:
-  RESOURCE_GROUP: rg-sparx-prod-cus
-  CLUSTER: aks-sparx-prod-cus
-  NAMESPACE: wizeworks
-  # Hyphenated, not slashed. `ghcr.io/brandonkorous/wizeworks-site` is a
-  # different package from `.../wizeworks/site`, and addressing the wrong one
-  # fails as a 401 that reads like a missing tag. The siblings use hyphens.
-  IMAGE: ghcr.io/brandonkorous/wizeworks-site
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # ------------------------------------------------------------------
-  # Gate the build. Cheap, and it catches the class of thing that would
-  # otherwise be discovered by a rollout that never becomes ready.
-  # ------------------------------------------------------------------
-  verify:
-    name: Typecheck & build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: site
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.9.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-          cache-dependency-path: site/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm build
-
-  build:
-    name: Build & push image
-    needs: verify
+  # Which apps this change touches. Docs and mockups touch neither: the repo
+  # root carries ~146 MB of concept PNGs and three long specs, and editing those
+  # should not roll production.
+  changes:
+    name: What changed
     runs-on: ubuntu-latest
     outputs:
-      sha_tag: ${{ steps.meta.outputs.version }}
+      site: ${{ steps.pick.outputs.site }}
+      admin: ${{ steps.pick.outputs.admin }}
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-
-      - uses: docker/login-action@v3
+      - uses: dorny/paths-filter@v3
+        id: filter
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE }}
-          tags: |
-            type=sha,prefix=sha-,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build & push
-        uses: docker/build-push-action@v6
-        with:
-          # Repo root, with .dockerignore excluding docs/ and images/ — that
-          # takes the context from ~147 MB to ~1 MB.
-          context: .
-          file: ./Dockerfile
-          push: true
-          provenance: false
-          build-args: WIZELENS_RELEASE=${{ github.sha }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=site
-          cache-to: type=gha,mode=min,scope=site,ignore-error=true
-
-  # ------------------------------------------------------------------
-  # Prove the kubelet will be able to pull, BEFORE asking it to.
-  #
-  # Nothing in k8s/ carries an imagePullSecret — the cluster pulls anonymously,
-  # matching kanninja and jotDOJO. If the GHCR package is private, that fails as
-  # ImagePullBackOff, discovered as a rollout that never becomes ready.
-  #
-  # GHCR answers an unauthorised anonymous manifest fetch with 404, NOT 401 — it
-  # hides existence rather than admitting it. So a 404 here means private, or a
-  # missing tag, or an Accept header that does not cover the manifest's media
-  # type. The step below tells those apart instead of guessing.
-  #
-  # This checks the SAME path the kubelet takes: an unauthenticated token
-  # request followed by an anonymous manifest HEAD. It is a five-second check
-  # that converts a confusing runtime failure into a named one with the fix
-  # attached.
-  # ------------------------------------------------------------------
-  verify-pullable:
-    name: Verify the image pulls anonymously
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Anonymous pull check
-        run: |
-          set -euo pipefail
-          PKG="wizeworks-site"
-          TAG="sha-$(echo '${{ github.sha }}' | cut -c1-7)"
-
-          TOKEN=$(curl -fsS "https://ghcr.io/token?scope=repository:brandonkorous/${PKG}:pull&service=ghcr.io" | jq -r .token)
-
-          # ALL FOUR media types, and the last two are the ones that matter.
-          # This build is SINGLE-PLATFORM (no `platforms:`, and `provenance:
-          # false` suppresses the attestation index), so its manifest is a plain
-          # `application/vnd.oci.image.manifest.v1+json` — NOT an index or a
-          # manifest list. A registry serves a manifest only if its type is in
-          # Accept, and GHCR reports the miss as 404, which is indistinguishable
-          # from a private package or a missing tag. Listing only the multi-arch
-          # types here failed a perfectly pullable image on 2026-08-28.
-          ACCEPT='application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json'
-
-          CODE=$(curl -s -o /dev/null -w '%{http_code}'             -H "Authorization: Bearer ${TOKEN}"             -H "Accept: ${ACCEPT}"             "https://ghcr.io/v2/brandonkorous/${PKG}/manifests/${TAG}")
-
-          if [ "$CODE" = "200" ]; then
-            echo "OK — ghcr.io/brandonkorous/${PKG}:${TAG} is anonymously pullable."
-            exit 0
-          fi
-
-          # A bare 404 has three causes and they need different fixes, so
-          # discriminate before reporting. An anonymous TAGS LIST succeeds only
-          # on a public package, which separates "private" from the rest.
-          TAGS=$(curl -s -H "Authorization: Bearer ${TOKEN}"             "https://ghcr.io/v2/brandonkorous/${PKG}/tags/list")
-
-          echo "::error::The image is NOT anonymously pullable (HTTP ${CODE})."
-          echo "::error::The cluster pulls without credentials, so the rollout"
-          echo "::error::would fail as ImagePullBackOff."
-          echo "::error::"
-
-          if echo "$TAGS" | grep -q '"tags"'; then
-            echo "::error::The package IS public — anonymous tag listing worked:"
-            echo "::error::  ${TAGS}"
-            echo "::error::"
-            if echo "$TAGS" | grep -q "\"${TAG}\""; then
-              echo "::error::and the tag ${TAG} EXISTS. So this is a media-type"
-              echo "::error::mismatch, not a permissions problem: the manifest's"
-              echo "::error::type is not in this job's Accept header. Check what"
-              echo "::error::the registry actually holds --"
-              echo "::error::  curl -sD- -o/dev/null -H \"Authorization: Bearer \$TOKEN\" \\"
-              echo "::error::    -H \"Accept: \$ACCEPT\" \\"
-              echo "::error::    https://ghcr.io/v2/brandonkorous/${PKG}/manifests/${TAG}"
-            else
-              echo "::error::but the tag ${TAG} is MISSING. The build job pushed a"
-              echo "::error::different tag than this job asked for."
-            fi
-          else
-            echo "::error::Anonymous tag listing was refused, so the package is"
-            echo "::error::PRIVATE. Fix once, then re-run this workflow:"
-            echo "::error::  gh api -X PATCH /user/packages/container/${PKG} -f visibility=public"
-            echo "::error::or Packages -> ${PKG} -> Package settings -> Change visibility."
-          fi
-          exit 1
-
-  deploy:
-    name: Roll out to AKS
-    needs: [build, verify-pullable]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Get cluster credentials
-        run: |
-          set -euo pipefail
-          az aks get-credentials \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "$CLUSTER" \
-            --overwrite-existing
-
-      # Key Vault -> Kubernetes Secret, the same flow as kanninja and rocketease,
-      # for the site's one secret: its WizeLens ingest key. OPTIONAL end to end.
-      # With no AZURE_KEY_VAULT_NAME variable, or no key in the vault, this step
-      # only says so; the Deployment reads the key with `optional: true`, so the
-      # site rolls out untraced rather than failing. Runs before the apply, so a
-      # new pod starts with the key already in place.
-      - name: WizeLens ingest key from Key Vault
+          filters: |
+            shared:
+              - '.dockerignore'
+              - 'k8s/namespace.yaml'
+              - '.github/workflows/deploy.yml'
+              - '.github/workflows/deploy-app.yml'
+            site:
+              - 'site/**'
+              - 'k8s/site/**'
+            admin:
+              - 'admin/**'
+              - 'k8s/admin/**'
+      - id: pick
         env:
-          VAULT: ${{ vars.AZURE_KEY_VAULT_NAME }}
+          EVENT: ${{ github.event_name }}
+          CHOICE: ${{ inputs.app }}
+          SHARED: ${{ steps.filter.outputs.shared }}
+          SITE: ${{ steps.filter.outputs.site }}
+          ADMIN: ${{ steps.filter.outputs.admin }}
         run: |
-          set -euo pipefail
-          if [ -z "$VAULT" ]; then
-            echo "::notice::AZURE_KEY_VAULT_NAME is not set: the site deploys untraced."
-            exit 0
+          if [ "$EVENT" = workflow_dispatch ]; then
+            [ "$CHOICE" != admin ] && SITE=true || SITE=false
+            [ "$CHOICE" != site ] && ADMIN=true || ADMIN=false
+          elif [ "$SHARED" = true ]; then
+            SITE=true; ADMIN=true
           fi
-          if ! key=$(az keyvault secret show --vault-name "$VAULT" \
-                       --name wizelens-key-wizeworks-site --query value -o tsv 2>/dev/null); then
-            echo "::notice::Could not read wizelens-key-wizeworks-site from $VAULT (missing, or no Key Vault Secrets User role): the site deploys untraced."
-            echo "Set it with: az keyvault secret set --vault-name $VAULT --name wizelens-key-wizeworks-site --value '<wl_ik_...>'"
-            exit 0
-          fi
-          echo "::add-mask::$key"
-          kubectl apply -f k8s/namespace.yaml
-          kubectl create secret generic site-secrets -n "$NAMESPACE" \
-            --from-literal=WIZELENS_KEY_WIZEWORKS_SITE="$key" \
-            --dry-run=client -o yaml | kubectl apply -f -
+          echo "site=$SITE" >> "$GITHUB_OUTPUT"
+          echo "admin=$ADMIN" >> "$GITHUB_OUTPUT"
+          echo "site=$SITE admin=$ADMIN"
 
-      # Pin to the immutable SHA tag rather than rolling `:latest`. A rollout to
-      # a mutable tag is not reproducible and cannot be rolled back by revision.
-      - name: Pin image and apply
-        run: |
-          set -euo pipefail
-          SHA_TAG="sha-$(git rev-parse --short HEAD)"
-          echo "Deploying ${IMAGE}:${SHA_TAG}"
+  site:
+    name: site
+    needs: changes
+    if: needs.changes.outputs.site == 'true'
+    uses: ./.github/workflows/deploy-app.yml
+    with:
+      app: site
+      deploy: ${{ github.event_name != 'pull_request' }}
+      health-path: /api/health
+      # Optional: without the key the site rolls out untraced.
+      vault-secrets: |
+        WIZELENS_KEY_WIZEWORKS_SITE=wizelens-key-wizeworks-site?
+      warm-urls: |
+        https://wize.works/
+        https://wize.works/work
+        https://wize.works/products
+        https://wize.works/about
+        https://wize.works/_next/image?url=%2Fproducts%2Fjotacular.png&w=640&q=75
+        https://wize.works/_next/image?url=%2Fproducts%2Fagconn.png&w=828&q=75
+        https://wize.works/images/machine-shop-1920.avif
 
-          cd k8s
-          kustomize edit set image "${IMAGE}=${IMAGE}:${SHA_TAG}"
-          cd ..
-
-          kubectl apply -k k8s/
-
-      # A pod reads its Secrets only when it starts, and a deploy whose image
-      # did not change leaves the pods alone, so a changed key went unread.
-      # A hash of the Secrets on the pod template changes exactly when they
-      # do, and that change rolls the pods.
-      - name: Restart pods when their Secrets change
-        run: |
-          set -euo pipefail
-          hash=$(for s in site-secrets; do
-            kubectl get secret "$s" -n "$NAMESPACE" \
-              -o go-template='{{range $k, $v := .data}}{{$k}}={{$v}};{{end}}'
-          done | sha256sum | cut -c1-16)
-          patch="{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"wizeworks/secrets-hash\":\"$hash\"}}}}}"
-          for d in site; do
-            kubectl patch deployment "$d" -n "$NAMESPACE" --type merge -p "$patch"
-          done
-
-      - name: Wait for rollout
-        run: |
-          set -euo pipefail
-          if ! kubectl rollout status -n "$NAMESPACE" deploy/site --timeout=300s; then
-            echo "::error::Rollout failed — recent pod state:"
-            kubectl get pods -n "$NAMESPACE" -o wide
-            kubectl describe deploy/site -n "$NAMESPACE" | tail -40
-            kubectl logs -n "$NAMESPACE" -l app.kubernetes.io/name=site --tail=100 --all-containers || true
-            exit 1
-          fi
-
-      # Proves the container actually serves, from inside the cluster. The
-      # public hostname depends on a Caddy route that lives in another repo, so
-      # a green rollout here does NOT mean wize.works resolves — that is checked
-      # separately, once.
-      - name: Smoke test the Service
-        run: |
-          set -euo pipefail
-          kubectl run smoke-$RANDOM \
-            --namespace "$NAMESPACE" \
-            --image=curlimages/curl:8.10.1 \
-            --restart=Never --rm -i --quiet --command -- \
-            curl -fsS --max-time 10 http://site.wizeworks.svc.cluster.local/api/health
-
-      # Non-fatal: primes the page and image caches after a restart so the
-      # first visitor does not pay the cold-start cost.
-      - name: Warm up the live site
-        continue-on-error: true
-        run: |
-          for path in / /work /products /about \
-            "/_next/image?url=%2Fproducts%2Fjotacular.png&w=640&q=75" \
-            "/_next/image?url=%2Fproducts%2Fagconn.png&w=828&q=75" \
-            "/images/machine-shop-1920.avif"; do
-            curl -s -o /dev/null --max-time 15 \
-              -w "%{http_code} %{time_total}s ${path}\n" \
-              -H 'Accept: image/avif,image/webp,*/*' \
-              "https://wize.works${path}" || true
-          done
+  admin:
+    name: admin
+    needs: changes
+    if: needs.changes.outputs.admin == 'true'
+    uses: ./.github/workflows/deploy-app.yml
+    with:
+      app: admin
+      deploy: ${{ github.event_name != 'pull_request' }}
+      health-path: /health
+      actions-key-secret: next-actions-key-admin
+      # The first three are required: without them no operator can sign in, so
+      # the deploy stops by name rather than shipping a console that 500s.
+      # OPERATOR_AUTH_SECRET is stored as base64 because its last byte is a
+      # carriage return (see deploy-app.yml).
+      vault-secrets: |
+        OPERATOR_DATABASE_URL=operator-database-url
+        OPERATOR_AUTH_SECRET=operator-auth-secret-b64
+        SPARX_INTERNAL_OPERATOR_TOKEN=sparx-internal-operator-token
+        OPERATOR_BOOTSTRAP_PASSWORD=operator-bootstrap-password?
+        NEXT_ACTIONS_KEY_ADMIN=next-actions-key-admin?
+        WIZELENS_KEY_ADMIN=wizelens-key-admin?

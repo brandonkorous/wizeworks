@@ -12,9 +12,16 @@ docs/animation.md   Motion specification — timing tokens, easing, per-section 
 docs/plan.md        Build plan for the homepage — phases, decisions, open questions
 images/             Rendered concept mockups (PNG, ~0.4–2.9 MB each)
 site/               The Next.js implementation — homepage plus six routes
+admin/              The operator console (admin.wize.works) — see admin/README.md
+k8s/                Cluster manifests: namespace.yaml, then one folder per app
 ```
 
-The repo is not a git repository. `site/` is the only part with a build.
+`site/` and `admin/` are the two parts with a build. Each has its own lockfile,
+its own `Dockerfile` (built from the repo root), and its own `k8s/<app>/`
+folder. `.github/workflows/deploy.yml` deploys whichever one a push changed.
+
+The rest of this file is about the site. The console's rules are in
+`admin/README.md` and in the CLAUDE.md files under `admin/packages/`.
 
 ## The site
 

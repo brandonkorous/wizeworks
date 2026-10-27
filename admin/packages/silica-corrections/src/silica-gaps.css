@@ -1,0 +1,85 @@
+/* ── silica gaps ─────────────────────────────────────────────────────────────
+   Rules that close a hole in a silicaui component. NOT sparx styling, and NOT a
+   place to change how silica looks — every rule here must be:
+
+     · written against silica's OWN class and OWN custom properties, so it
+       inherits whatever the color/size classes set and stays one rule for the
+       whole platform rather than a patch at a call site;
+     · ADDITIVE to a state silica does not style at all, so it can never fight
+       silica's own rules;
+     · deletable the day silicaui ships the same thing — redundant, never
+       conflicting;
+     · raised upstream, with the version it was found against recorded below.
+
+   If you want a silica component to look DIFFERENT, this is the wrong file —
+   change the token, or ask for the variant. See root CLAUDE.md RULE #1.
+
+   Lives in @wizeworks/silica-corrections, not in a brand package. Every rule
+   here is written against silica's OWN class and OWN custom properties, so it
+   states no value and every brand gets the same fix from one copy. It moved out
+   of @sparx/brand on 2026-08-16: a correction both brands need cannot sit inside
+   one brand's package, or deleting that brand deletes the fix for the other. */
+
+/* ── Checkbox: the third state ─── raised upstream; unfixed as of 0.44 ────────
+   `.checkbox` sets `appearance: none` — which suppresses the browser's own
+   indeterminate dash — and then styles `:checked` only. So a checkbox holding
+   the native `indeterminate` DOM property paints identically to an UNCHECKED
+   one, and a "some rows selected" header reads as "none selected".
+
+   Live in `sparx/apps/workbench/surfaces/inventory/reorder-list.tsx`, whose select-all
+   header sets `el.indeterminate` through a ref — it is a DOM property with no
+   HTML attribute, so it cannot be set from JSX or from a class.
+
+   ONE call site is not a reason to delete this. Any select-all header needs the
+   third state, and the next one will be written in workbench the same way; the
+   alternative is each surface hand-rolling a dash. Delete it when silicaui
+   styles `:indeterminate`, not when the call-site count dips. */
+.checkbox:indeterminate {
+  background-color: var(--checkbox-accent, var(--color-primary));
+  border-color: var(--checkbox-accent, var(--color-primary));
+  /* A centred bar in the accent's content color — the same ink silica's own
+     checkmark uses, so it stays legible on a light accent (warning) and a dark
+     one alike. Drawn as a gradient for the same reason silica draws the check
+     that way: a background-image can't read a CSS var, and ::before/::after on
+     a form control is inconsistent across browsers. */
+  background-image: linear-gradient(
+    to bottom,
+    transparent 0 42%,
+    var(--checkbox-content, var(--color-primary-content)) 42% 58%,
+    transparent 58% 100%
+  );
+  background-size: 60% 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* ── Alert: the action beside the message on a phone ─── unfixed as of 0.55 ───
+   `.alert` is a flex ROW that never wraps, and `.alert-actions` is
+   `flex-shrink: 0`. So a wide action does not give: it keeps its width and the
+   message column is squeezed to whatever is left. Measured in a 360px pane: a
+   194px button in a 253px alert left the message SEVEN pixels — one word per
+   line, running underneath the button.
+
+   `flex-wrap` alone is not the fix, and finding that out is the point of the
+   second rule. A flex line breaks on each item’s HYPOTHETICAL size, which for
+   `flex: 1 1 auto` is the message’s whole sentence — 416px in a 417px alert — so
+   wrapping alone ALSO drops the action below the message on a full-width desktop
+   alert, where nothing was wrong. Changing how every Alert on both brands looks
+   is not a correction, it is a redesign, and not ours to make.
+
+   So the basis is restated as the width the message actually needs to stay
+   readable. This is the one rule in this file that redeclares a property silica
+   sets, and that is its reason: `auto` is what makes the line break in the wrong
+   place. Nothing else changes — `flex-grow: 1` still fills the row, and silica’s
+   `min-width: 0` still lets a long word wrap rather than overflow.
+
+   Measured either side of it: desktop 417px, 192 + 194 fits, still one row with
+   the message at 211px exactly as before; phone 253px, it cannot, so the action
+   takes its own line and the message goes 7px → 213px. Delete both the day
+   silicaui wraps its own alert. */
+.alert {
+  flex-wrap: wrap;
+}
+.alert-content {
+  flex-basis: 12rem;
+}

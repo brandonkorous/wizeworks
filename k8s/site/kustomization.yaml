@@ -2,8 +2,9 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: wizeworks
 
+# The namespace is applied on its own (k8s/namespace.yaml) before either app,
+# because kustomize will not load a file from outside this directory.
 resources:
-  - namespace.yaml
   - deployment.yaml
   - service.yaml
 

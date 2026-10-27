@@ -3,10 +3,10 @@
 # The WizeWorks marketing site — a Next.js app living in `site/` of a repo whose
 # root also holds the brand specs and the concept mockups.
 #
-# BUILD CONTEXT IS THE REPO ROOT, not `site/`. The site is the only thing that
-# ships, but `.dockerignore` does the excluding rather than a narrower context,
-# so `docker build .` from the repo root does the right thing and nobody has to
-# remember a `-f`/context pairing.
+# BUILD CONTEXT IS THE REPO ROOT, not `site/`:
+#   docker build -f site/Dockerfile .
+# The root `.dockerignore` keeps the docs and mockups out, and admin/Dockerfile
+# uses the same context, so both apps share one ignore file.
 #
 # WHY STANDALONE. `next build` with `output: "standalone"` traces the modules
 # actually reached at runtime and emits a self-contained server — 23 MB here,
