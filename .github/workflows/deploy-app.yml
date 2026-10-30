@@ -357,7 +357,7 @@ jobs:
           fi
 
       # Proves the container actually serves, from inside the cluster. The
-      # public hostname depends on a Caddy route that lives in the sparx repo,
+      # public hostname depends on a Caddy route that lives in wize-infrastructure,
       # so a green rollout here does NOT mean the host resolves.
       - name: Smoke test the Service
         env:
