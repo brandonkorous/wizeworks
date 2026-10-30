@@ -5,8 +5,10 @@
 //
 // Adding a new event:
 //   1. Add the literal to `EventType` here.
-//   2. Add the topic + subscribers in terraform/envs/prod/main.tf.
-//   3. terraform apply.
+//   2. Add the topic + subscribers in wize-infrastructure's
+//      terraform/envs/prod/main.tf (a pull request in that repository).
+//      sparx's `pnpm check:events` fails until it exists.
+//   3. Release wize-infrastructure.
 //   4. Define a payload interface in the consumer-side worker (and import
 //      it back here only if multiple publishers share the same payload).
 

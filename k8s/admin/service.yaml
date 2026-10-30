@@ -1,5 +1,5 @@
 # Port 80 → container 3000, like the site: Caddy addresses every co-tenant as
-# `<svc>.<ns>.svc.cluster.local:80`, so the route in the sparx repo reads
+# `<svc>.<ns>.svc.cluster.local:80`, so the route in the wize-infrastructure repo reads
 # `admin.wizeworks.svc.cluster.local:80`.
 apiVersion: v1
 kind: Service

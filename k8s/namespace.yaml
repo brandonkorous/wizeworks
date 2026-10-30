@@ -1,7 +1,7 @@
 # WizeWorks is a CO-TENANT on `aks-sparx-prod-cus`, alongside silicaui,
 # kanninja, jotacular and agconn. Each product gets its own namespace and is
 # deployed from its own repository; the only thing shared is the cluster and
-# the one Caddy ingress in the sparx repo, which reaches in cross-namespace via
+# the one Caddy ingress in the wize-infrastructure repo, which reaches in cross-namespace via
 # the ClusterIP Service.
 apiVersion: v1
 kind: Namespace

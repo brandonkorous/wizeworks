@@ -14,7 +14,10 @@ and its links into sparx-prod are in `admin/README.md`.
 WizeWorks is a **co-tenant** on the shared sparx cluster, the same way silicaui,
 kanninja, jotacular and agconn are: its own namespace, its own repository, its
 own image. The only shared thing is the cluster and the single Caddy routing
-table, which lives in the **sparx repo**, not here.
+table, which lives in the **wize-infrastructure repo**
+(`wizeworksllc/wize-infrastructure`, local `G:/code/@wizeworks/wize-infrastructure`),
+not here. That repo has its own release, which applies the Terraform and the
+Caddy ingress for every product without building any app images.
 
 ```
 push to main  →  verify (typecheck + build)
@@ -25,15 +28,15 @@ push to main  →  verify (typecheck + build)
 
 ---
 
-## ⚠ Two changes live in the sparx repo, not this one
+## ⚠ Two changes live in other repos, not this one
 
 A green rollout here does **not** make `wize.works` resolve. Both of these are
-already written but must be **applied from the sparx repo**:
+already written, and each ships with its own repo's release:
 
-| File (in `sparx.works`) | Change |
-|---|---|
-| `k8s/ingress/Caddyfile` | `wize.works` → `site.wizeworks.svc.cluster.local:80`, plus a `www` redirect |
-| `wizeworks/services/api-rest/src/routes/internal/domain-check.ts` | `wize.works` and `www.wize.works` added to the static platform hosts |
+| File | Repo | Change |
+|---|---|---|
+| [`k8s/ingress/Caddyfile`](https://github.com/wizeworksllc/wize-infrastructure/blob/main/k8s/ingress/Caddyfile) | wize-infrastructure | `wize.works` → `site.wizeworks.svc.cluster.local:80`, plus a `www` redirect |
+| `wizeworks/services/api-rest/src/routes/internal/domain-check.ts` | sparx | `wize.works` and `www.wize.works` added to the static platform hosts |
 
 **Both are required, and the second is the one that bites.** Caddy uses
 on-demand TLS and asks api-rest whether a hostname may be issued a certificate.
@@ -48,32 +51,35 @@ exactly that reason.
    Service. Until the Service exists, the Caddy route proxies into nothing and
    the host 502s. (That is precisely how `admin.wize.works` broke — a route
    pointing at a namespace that was never recreated on AKS.)
-2. **Then the sparx repo**, which rolls both Caddy and api-rest.
+2. **Then wize-infrastructure** (its release applies the Caddy route) **and the
+   sparx repo** (its release rolls api-rest with the allow-list entry).
 
 ---
 
 ## Prerequisites — almost all of it is code
 
-**Almost all of this is Terraform, in the sparx repo.** It is provisioned the
+**Almost all of this is Terraform, in the wize-infrastructure repo.** It is provisioned the
 same way jotacular, kanNINJA and AGCONN are — no secrets are stored in GitHub
 at any point.
 
 | What | Where | State |
 |---|---|---|
-| App registration, service principal, federated credentials | `terraform/bootstrap-azure/wizeworks.tf` | written |
+| App registration, service principal, federated credentials | wize-infrastructure `terraform/bootstrap-azure/wizeworks.tf` | written |
 | AKS `Cluster User` role assignment | same file | written |
-| `wize.works` + `www` DNS records | `terraform/modules/dns/main.tf` | written, gated |
-| DNS cutover switch | `terraform/envs/azure/ingress.tf` | `wizeworks_dns_enabled = false` |
-| Caddy route | `k8s/ingress/Caddyfile` | written |
-| On-demand TLS allow-list | `.../internal/domain-check.ts` | written |
+| `wize.works` + `www` DNS records | wize-infrastructure `terraform/modules/dns/main.tf` | written, gated |
+| DNS cutover switch | wize-infrastructure `terraform/envs/azure/ingress.tf` | `wizeworks_dns_enabled = false` |
+| Caddy route | wize-infrastructure `k8s/ingress/Caddyfile` | written |
+| On-demand TLS allow-list | sparx `.../internal/domain-check.ts` | written |
 
-Apply `bootstrap-azure` first (it grants roles, which the release identity
-cannot do), then `envs/azure`.
+wize-infrastructure's release applies both Terraform roots: `envs/azure` with
+its release identity, and `bootstrap-azure` with a separate bootstrap identity,
+because granting roles is something the release identity cannot do.
 
 ### The only two manual steps
 
 - [ ] **Set three repository variables.** `terraform output wizeworks_github_setup`
-      prints the exact `gh variable set` commands. These are VARIABLES, not
+      (run in wize-infrastructure's `terraform/bootstrap-azure`) prints the exact
+      `gh variable set` commands. These are VARIABLES, not
       secrets — a client id identifies an application and authenticates nothing
       without a matching federated subject.
 - [ ] **Make the GHCR package public**, once, after the first image is pushed.
@@ -135,8 +141,8 @@ kubectl run smoke --rm -i --restart=Never -n wizeworks \
   curl -fsS http://site.wizeworks.svc.cluster.local/api/health
 ```
 
-If that passes and `https://wize.works` does not, the problem is in the sparx
-repo — the Caddy route, the TLS allow-list, or DNS. Not here.
+If that passes and `https://wize.works` does not, the problem is in the Caddy
+route or DNS (wize-infrastructure) or the TLS allow-list (sparx). Not here.
 
 ---
 
@@ -175,7 +181,7 @@ gh variable set AZURE_KEY_VAULT_NAME -R brandonkorous/wizeworks -b '<vault>'
 ```
 
 The `gha-wizeworks-prod` identity needs `Key Vault Secrets User` on that vault.
-That grant is Terraform in the sparx repo (`terraform/bootstrap-azure/wizeworks.tf`).
+That grant is Terraform in the wize-infrastructure repo (`terraform/bootstrap-azure/wizeworks.tf`).
 
 In development (`pnpm dev`) tracing is on, with the dashboard at `/_wizelens`
 and the HUD on the page.

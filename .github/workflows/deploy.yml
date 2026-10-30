@@ -12,8 +12,9 @@ name: Build & Deploy to AKS
 # WizeWorks is a CO-TENANT here, the same way silicaui, kanninja, jotacular and
 # agconn are: its own namespace, its own repo, its own image. The only shared
 # thing is the cluster and the single Caddy routing table that lives in the
-# sparx repo — see k8s/ingress/Caddyfile there. Adding a host is a change in
-# THAT repo, not this one.
+# wize-infrastructure repo (wizeworksllc/wize-infrastructure), see
+# k8s/ingress/Caddyfile there. Adding a host is a change in THAT repo, released
+# by its own release, not this one.
 #
 # AUTH: workload identity federation, no stored credential. Azure trusts a
 # GitHub OIDC token whose subject is
@@ -31,7 +32,8 @@ name: Build & Deploy to AKS
 #     --jq .sub_claim_prefix
 #
 # The credential is provisioned by Terraform, not by hand — see
-# terraform/bootstrap-azure/wizeworks.tf in the sparx repo. The three AZURE_*
+# terraform/bootstrap-azure/wizeworks.tf in the wize-infrastructure repo,
+# applied by that repo's release. The three AZURE_*
 # values are repository VARIABLES rather than secrets: they are public
 # identifiers, and hiding them only makes a failed run harder to read.
 
