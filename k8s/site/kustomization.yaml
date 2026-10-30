@@ -11,5 +11,5 @@ resources:
 # The workflow rewrites this to the commit SHA before applying, so a rollout is
 # always to an immutable tag even though the manifest reads `latest`.
 images:
-  - name: ghcr.io/brandonkorous/wizeworks-site
+  - name: ghcr.io/wizeworksllc/wizeworks-site
     newTag: latest

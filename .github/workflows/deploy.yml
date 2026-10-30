@@ -19,7 +19,7 @@ name: Build & Deploy to AKS
 # AUTH: workload identity federation, no stored credential. Azure trusts a
 # GitHub OIDC token whose subject is
 #
-#   repo:brandonkorous@13042540/wizeworks@1349021052:ref:refs/heads/main
+#   repo:wizeworksllc@350084568/wizeworks@1349021052:ref:refs/heads/main
 #
 # NOTE THE NUMERIC IDS. GitHub qualifies the OIDC subject per repository, by
 # age — AgConnect and kanninja are old enough to keep the plain
@@ -28,7 +28,7 @@ name: Build & Deploy to AKS
 # subject it RECEIVED, never the one it expected. Read it back rather than
 # assembling it:
 #
-#   gh api repos/brandonkorous/wizeworks/actions/oidc/customization/sub \
+#   gh api repos/wizeworksllc/wizeworks/actions/oidc/customization/sub \
 #     --jq .sub_claim_prefix
 #
 # The credential is provisioned by Terraform, not by hand — see

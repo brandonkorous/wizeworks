@@ -43,7 +43,7 @@ spec:
       # No imagePullSecrets — the GHCR package is public, like the site's.
       containers:
         - name: admin
-          image: ghcr.io/brandonkorous/wizeworks-admin:latest
+          image: ghcr.io/wizeworksllc/wizeworks-admin:latest
           imagePullPolicy: Always
           ports:
             - name: http

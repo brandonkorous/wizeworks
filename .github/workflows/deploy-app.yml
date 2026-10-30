@@ -44,10 +44,10 @@ env:
   RESOURCE_GROUP: rg-sparx-prod-cus
   CLUSTER: aks-sparx-prod-cus
   NAMESPACE: wizeworks
-  # Hyphenated, not slashed. `ghcr.io/brandonkorous/wizeworks-site` is a
+  # Hyphenated, not slashed. `ghcr.io/wizeworksllc/wizeworks-site` is a
   # different package from `.../wizeworks/site`, and addressing the wrong one
   # fails as a 401 that reads like a missing tag.
-  IMAGE: ghcr.io/brandonkorous/wizeworks-${{ inputs.app }}
+  IMAGE: ghcr.io/wizeworksllc/wizeworks-${{ inputs.app }}
 
 jobs:
   # ------------------------------------------------------------------
@@ -178,7 +178,7 @@ jobs:
           set -euo pipefail
           TAG="sha-$(echo '${{ github.sha }}' | cut -c1-7)"
 
-          TOKEN=$(curl -fsS "https://ghcr.io/token?scope=repository:brandonkorous/${PKG}:pull&service=ghcr.io" | jq -r .token)
+          TOKEN=$(curl -fsS "https://ghcr.io/token?scope=repository:wizeworksllc/${PKG}:pull&service=ghcr.io" | jq -r .token)
 
           # ALL FOUR media types, and the last two are the ones that matter.
           # This build is SINGLE-PLATFORM (no `platforms:`, and `provenance:
@@ -193,10 +193,10 @@ jobs:
           CODE=$(curl -s -o /dev/null -w '%{http_code}' \
             -H "Authorization: Bearer ${TOKEN}" \
             -H "Accept: ${ACCEPT}" \
-            "https://ghcr.io/v2/brandonkorous/${PKG}/manifests/${TAG}")
+            "https://ghcr.io/v2/wizeworksllc/${PKG}/manifests/${TAG}")
 
           if [ "$CODE" = "200" ]; then
-            echo "OK — ghcr.io/brandonkorous/${PKG}:${TAG} is anonymously pullable."
+            echo "OK — ghcr.io/wizeworksllc/${PKG}:${TAG} is anonymously pullable."
             exit 0
           fi
 
@@ -204,7 +204,7 @@ jobs:
           # discriminate before reporting. An anonymous TAGS LIST succeeds only
           # on a public package, which separates "private" from the rest.
           TAGS=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
-            "https://ghcr.io/v2/brandonkorous/${PKG}/tags/list")
+            "https://ghcr.io/v2/wizeworksllc/${PKG}/tags/list")
 
           echo "::error::The image is NOT anonymously pullable (HTTP ${CODE})."
           echo "::error::The cluster pulls without credentials, so the rollout"

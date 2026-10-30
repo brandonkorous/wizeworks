@@ -27,7 +27,7 @@ spec:
       # anonymously, matching kanninja and jotDOJO on this cluster.
       containers:
         - name: site
-          image: ghcr.io/brandonkorous/wizeworks-site:latest
+          image: ghcr.io/wizeworksllc/wizeworks-site:latest
           # Always, not IfNotPresent: `:latest` is mutable, and a bare pod
           # restart on a node holding a stale cached layer would silently serve
           # the previous release. The workflow pins to a SHA tag anyway, so this

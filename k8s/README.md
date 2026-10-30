@@ -5,8 +5,8 @@
 
 | App | Host | Image | Manifests |
 |---|---|---|---|
-| site | `wize.works` | `ghcr.io/brandonkorous/wizeworks-site` | `k8s/site/` |
-| admin | `admin.wize.works` | `ghcr.io/brandonkorous/wizeworks-admin` | `k8s/admin/` |
+| site | `wize.works` | `ghcr.io/wizeworksllc/wizeworks-site` | `k8s/site/` |
+| admin | `admin.wize.works` | `ghcr.io/wizeworksllc/wizeworks-admin` | `k8s/admin/` |
 
 `k8s/namespace.yaml` is applied on its own before either app. Admin's secrets
 and its links into sparx-prod are in `admin/README.md`.
@@ -100,7 +100,7 @@ because granting roles is something the release identity cannot do.
 
 ### The federated subject has numeric ids
 
-`repo:brandonkorous@13042540/wizeworks@1349021052`
+`repo:wizeworksllc@350084568/wizeworks@1349021052`
 
 GitHub qualifies the OIDC subject per repository, by age. AgConnect and kanninja
 are old enough to keep the plain `repo:owner/name` form; jotacular and this repo
@@ -109,7 +109,7 @@ never matches, and Entra reports only the subject it received. The Terraform
 default was read back with:
 
 ```bash
-gh api repos/brandonkorous/wizeworks/actions/oidc/customization/sub --jq .sub_claim_prefix
+gh api repos/wizeworksllc/wizeworks/actions/oidc/customization/sub --jq .sub_claim_prefix
 ```
 
 ### A note on TLS for this zone
@@ -177,7 +177,7 @@ rolls out untraced.
 
 ```bash
 az keyvault secret set --vault-name <vault> --name wizelens-key-wizeworks-site --value <wl_ik_…>
-gh variable set AZURE_KEY_VAULT_NAME -R brandonkorous/wizeworks -b '<vault>'
+gh variable set AZURE_KEY_VAULT_NAME -R wizeworksllc/wizeworks -b '<vault>'
 ```
 
 The `gha-wizeworks-prod` identity needs `Key Vault Secrets User` on that vault.
